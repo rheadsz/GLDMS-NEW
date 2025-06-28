@@ -66,4 +66,4 @@ All database fields are mapped to appropriate DIGGS schema elements:
 This project is part of the California Department of Transportation's modernization efforts.
 
 ## License
-California Department of Transportation - Internal Use Only 
+California Department of Transportation - Internal Use Only

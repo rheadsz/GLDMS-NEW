@@ -6,7 +6,6 @@ USE `gldms_2025`;
 -- =====================================================
 -- This file contains all 29 tables in proper dependency order
 -- Created: 2025
--- Created by: Rhea Benedicta Dsouza
 -- Purpose: Complete GLDMS database with DIGGS compliance
 -- =====================================================
 
@@ -1173,3 +1172,5 @@ COMMENT='Audit log table - DIGGS compliant mapping to AuditLog element';
 SET FOREIGN_KEY_CHECKS = 1; 
 
 SHOW TABLES;
+
+select * from test_type;

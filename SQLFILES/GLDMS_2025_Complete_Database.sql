@@ -1174,3 +1174,4 @@ SET FOREIGN_KEY_CHECKS = 1;
 SHOW TABLES;
 
 select * from test_type;
+

@@ -1,187 +1,104 @@
-import React, { useState } from 'react';
-import { 
-  Box, 
-  Tabs, 
-  Tab, 
-  Typography, 
-  AppBar, 
-  Toolbar,
-  Container,
-  Paper
-} from '@mui/material';
-import { 
-  Science, 
-  Assignment, 
-  Storage, 
-  Assessment
-} from '@mui/icons-material';
-import DummyTab from './components/DummyTab';
+import React, { useState } from "react";
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import Header from "./components/Header";
+import SignInBox from "./components/SignInBox";
+import RequestMenu from "./components/RequestMenu";
+import TabsDashboard from "./components/TabsDashboard";
+import DummyTab from "./components/DummyTab";
+import RaiseRequestForm from "./components/RaiseRequestForm";
 
-// Tab Panel Component
-function TabPanel({ children, value, index, ...other }) {
+function TestManagement() {
   return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`simple-tabpanel-${index}`}
-      aria-labelledby={`simple-tab-${index}`}
-      {...other}
-    >
-      {value === index && (
-        <Box sx={{ p: 3 }}>
-          {children}
-        </Box>
-      )}
+    <div>
+      <h2 className="h2 mb-3">Test Management</h2>
+      <p>View and manage test results. This tab will contain test data management functionality.</p>
+    </div>
+  );
+}
+function ProjectManagement() {
+  return (
+    <div>
+      <h2 className="h2 mb-3">Project Management</h2>
+      <p>Manage projects and related data. This tab will contain project management functionality.</p>
+    </div>
+  );
+}
+function ProductionManagement() {
+  return (
+    <div>
+      <h2 className="h2 mb-3">Production Management</h2>
+      <p>Oversee production workflows. This tab will contain production management functionality.</p>
+    </div>
+  );
+}
+function DBManagement() {
+  return (
+    <div>
+      <h2 className="h2 mb-3">DB Management</h2>
+      <p>Database administration tools. This tab will contain DB management functionality.</p>
     </div>
   );
 }
 
-// Tab Content Components
-function TestManagement() {
-  return (
-    <Box>
-      <Typography variant="h4" gutterBottom>
-        Test Management
-      </Typography>
-      <Typography variant="body1">
-        View and manage test results. This tab will contain test data management functionality.
-      </Typography>
-    </Box>
-  );
-}
+const tabs = [
+  { label: "Test Management", content: <TestManagement />, icon: "bi bi-clipboard-data" },
+  { label: "Project Management", content: <ProjectManagement />, icon: "bi bi-folder2-open" },
+  { label: "Production Management", content: <ProductionManagement />, icon: "bi bi-bar-chart" },
+  { label: "DB Management", content: <DBManagement />, icon: "bi bi-table" },
+  { label: "Dummy Tab", content: <DummyTab /> }, // No icon for Dummy Tab
+];
 
-function ProjectManagement() {
-  return (
-    <Box>
-      <Typography variant="h4" gutterBottom>
-        Project Management
-      </Typography>
-      <Typography variant="body1">
-        Add, edit, and manage projects. This tab will contain project CRUD operations.
-      </Typography>
-    </Box>
-  );
-}
+function AppRoutes({ signedIn, setSignedIn }) {
+  const [tab, setTab] = useState(0);
+  const navigate = useNavigate();
 
-function ProductionManagement() {
-  return (
-    <Box>
-      <Typography variant="h4" gutterBottom>
-        Production Management
-      </Typography>
-      <Typography variant="body1">
-        View production reports and analytics. This tab will contain production data.
-      </Typography>
-    </Box>
-  );
-}
+  // Redirect to sign-in if not signed in
+  if (!signedIn) {
+    return (
+      <Routes>
+        <Route path="/*" element={
+          <div className="min-vh-100 bg-light">
+            <Header showSignOut={false} />
+            <div className="d-flex flex-column align-items-center justify-content-center" style={{ minHeight: 'calc(100vh - 72px)' }}>
+              <SignInBox onSignIn={() => { setSignedIn(true); navigate("/menu"); }} />
+            </div>
+          </div>
+        } />
+      </Routes>
+    );
+  }
 
-function DBManagement() {
   return (
-    <Box>
-      <Typography variant="h4" gutterBottom>
-        DB Management
-      </Typography>
-      <Typography variant="body1">
-        Database management functions. This tab will contain database administration tools.
-      </Typography>
-    </Box>
+    <Routes>
+      <Route path="/menu" element={
+        <div className="min-vh-100 bg-light">
+          <Header showSignOut={true} onSignOut={() => { setSignedIn(false); navigate("/"); }} />
+          <RequestMenu onMain={() => navigate("/main")} onRaiseRequest={() => navigate("/raise-request")} />
+        </div>
+      } />
+      <Route path="/main" element={
+        <div className="min-vh-100 bg-light text-dark">
+          <Header showSignOut={true} onSignOut={() => { setSignedIn(false); navigate("/"); }} />
+          <TabsDashboard tab={tab} setTab={setTab} tabs={tabs} />
+        </div>
+      } />
+      <Route path="/raise-request" element={
+        <div className="min-vh-100 bg-light">
+          <Header showSignOut={true} onSignOut={() => { setSignedIn(false); navigate("/"); }} />
+          <RaiseRequestForm />
+        </div>
+      } />
+      <Route path="/*" element={<Navigate to="/menu" />} />
+    </Routes>
   );
 }
 
 function App() {
-  const [value, setValue] = useState(0);
-
-  const handleChange = (event, newValue) => {
-    setValue(newValue);
-  };
-
+  const [signedIn, setSignedIn] = useState(false);
   return (
-    <Box sx={{ flexGrow: 1 }}>
-      {/* Header */}
-      <AppBar position="static" sx={{ backgroundColor: 'white', color: 'black' }}>
-        <Toolbar>
-          {/* Caltrans Logo */}
-          <Box 
-            sx={{ 
-              display: 'flex', 
-              alignItems: 'center',
-              mr: 2
-            }}
-          >
-            <img 
-              src="/caltrans-logo.svg.png" 
-              alt="Caltrans Logo" 
-              style={{ 
-                height: '40px', 
-                width: 'auto'
-              }} 
-            />
-          </Box>
-          
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1, color: 'black' }}>
-            Geotechnical Lab Database Management System
-          </Typography>
-        </Toolbar>
-      </AppBar>
-
-      {/* Main Content */}
-      <Container maxWidth="xl" sx={{ mt: 3 }}>
-        <Paper sx={{ width: '100%' }}>
-          {/* Tabs */}
-          <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-            <Tabs 
-              value={value} 
-              onChange={handleChange} 
-              aria-label="GLDMS admin tabs"
-              variant="scrollable"
-              scrollButtons="auto"
-            >
-              <Tab 
-                icon={<Science />} 
-                label="Test Management" 
-                iconPosition="start"
-              />
-              <Tab 
-                icon={<Assignment />} 
-                label="Project Management" 
-                iconPosition="start"
-              />
-              <Tab 
-                icon={<Assessment />} 
-                label="Production Management" 
-                iconPosition="start"
-              />
-              <Tab 
-                icon={<Storage />} 
-                label="DB Management" 
-                iconPosition="start"
-              />
-              <Tab 
-                label="Dummy Tab"
-              />
-            </Tabs>
-          </Box>
-
-          {/* Tab Panels */}
-          <TabPanel value={value} index={0}>
-            <TestManagement />
-          </TabPanel>
-          <TabPanel value={value} index={1}>
-            <ProjectManagement />
-          </TabPanel>
-          <TabPanel value={value} index={2}>
-            <ProductionManagement />
-          </TabPanel>
-          <TabPanel value={value} index={3}>
-            <DBManagement />
-          </TabPanel>
-          <TabPanel value={value} index={4}>
-            <DummyTab />
-          </TabPanel>
-        </Paper>
-      </Container>
-    </Box>
+    <Router>
+      <AppRoutes signedIn={signedIn} setSignedIn={setSignedIn} />
+    </Router>
   );
 }
 

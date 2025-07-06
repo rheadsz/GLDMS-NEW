@@ -5,6 +5,8 @@ const cors = require('cors');
 const app = express();
 const port = 3001;
 
+console.log('Starting server.js...');
+
 app.use(cors());
 app.use(express.json());
 
@@ -35,6 +37,35 @@ app.get('/api/test-types', (req, res) => {
   });
 });
 
+app.post('/api/login', (req, res) => {
+  // Log the incoming request body (for debugging)
+  console.log('Login attempt:', req.body);
+
+  const { username, password } = req.body;
+  const query = 'SELECT * FROM users WHERE UserName = ? AND Password = ? LIMIT 1';
+
+  // Log the query and parameters
+  console.log('Executing query:', query, 'with params:', [username, password]);
+
+  db.query(query, [username, password], (err, results) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ message: 'Database error' });
+    }
+    // Log the results from the database
+    console.log('Query results:', results);
+
+    if (results.length === 0) {
+      console.log('Invalid username or password');
+      return res.status(401).json({ message: 'Invalid username or password' });
+    }
+    // Return userType (role) to frontend
+    const user = results[0];
+    console.log('Login successful, userType:', user.UserType);
+    res.json({ userType: user.UserType });
+  });
+});
+
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
-}); 
+});

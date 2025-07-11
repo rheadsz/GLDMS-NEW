@@ -7,6 +7,7 @@ import TabsDashboard from "./components/TabsDashboard";
 import DummyTab from "./components/DummyTab";
 import RaiseRequestForm from "./components/RaiseRequestForm";
 import SupervisorMenu from "./components/SupervisorMenu";
+import ManageRequests from "./components/MangageResquestSupervisor";
 
 function SupervisorDashboard() {
   return (
@@ -99,7 +100,25 @@ function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole }) {
             <Header showSignOut={true} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
             <SupervisorMenu />
           </div>
+          
         } />
+        <Route
+        path="/manage-requests"
+        element={
+          <div className="min-vh-100 bg-light">
+            <Header
+              showSignOut={true}
+              onSignOut={() => {
+                setSignedIn(false);
+                setUserRole(null);
+                navigate("/");
+              }}
+            />
+            <ManageRequests />
+          </div>
+        }
+      />
+
         <Route path="/*" element={<Navigate to="/supervisor" />} />
       </Routes>
     );

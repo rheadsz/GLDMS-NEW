@@ -1,4 +1,26 @@
 import React, { useState, useEffect } from "react";
+import "./RaiseRequestForm.css";
+
+// Custom styles for the component
+const tableScrollStyle = {
+  maxWidth: '100%',
+  overflowX: 'auto',
+};
+
+// Fixed width for the first column
+const firstColumnStyle = {
+  position: 'sticky',
+  left: 0,
+  backgroundColor: '#fff',
+  zIndex: 1,
+  textAlign: 'right',
+  minWidth: '180px',
+};
+
+// Fixed width for sample columns
+const sampleColumnStyle = {
+  minWidth: '150px',
+};
 
 function RaiseRequestForm({ userName, userEmail, userPhone }) {
   // I am setting up state for all the main fields
@@ -27,19 +49,24 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
   const [subObject, setSubObject] = useState("");
   const [activity, setActivity] = useState("");
   const [subActivity, setSubActivity] = useState("");
-  const [numSamples, setNumSamples] = useState(5);
+  // Max number of samples
+  const MAX_SAMPLES = 50;
+  const [numSamples, setNumSamples] = useState(2); // Start with 2 samples
   const [expectedSampleReceiptDate, setExpectedSampleReceiptDate] = useState("");
   const [comments, setComments] = useState("");
 
   // I am using a simple array for sample details (for demo, 5 samples)
+  // Update sampleDetails and selectedTests to support dynamic columns
   const [sampleDetails, setSampleDetails] = useState(
-    Array.from({ length: 5 }, (_, i) => ({
+    Array.from({ length: 2 }, () => ({
       boreholeID: "",
-      depthFrom: "",
-      depthTo: "",
+      top: "",
+      bottom: "",
       TL101No: "",
-      tubeJar: "",
-      quantity: 1,
+      type: "Bag",
+      length: "",
+      diameter: "",
+      weight: "",
       fieldCollectionDate: "",
       sameAsSampleNo: null,
     }))
@@ -65,7 +92,7 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
   ];
   // Update selectedTests to match the new testTypes length
   const [selectedTests, setSelectedTests] = useState(
-    Array.from({ length: 5 }, () => Array(testTypes.length).fill(false))
+    Array.from({ length: 2 }, () => Array(testTypes.length).fill(false))
   );
 
   const [supervisors, setSupervisors] = useState([]);
@@ -89,9 +116,21 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
   }, [supervisorName, supervisors]);
 
   // I am handling changes for sample details
+  // Update sampleDetailChange to handle new fields
   const handleSampleDetailChange = (idx, field, value) => {
     const updated = [...sampleDetails];
     updated[idx][field] = value;
+    setSampleDetails(updated);
+  };
+
+  // Update type change handler to reset size fields
+  const handleTypeChange = (idx, value) => {
+    const updated = [...sampleDetails];
+    updated[idx].type = value;
+    if (value === "Bag") {
+      updated[idx].length = "";
+      updated[idx].diameter = "";
+    }
     setSampleDetails(updated);
   };
 
@@ -100,6 +139,32 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
     const updated = selectedTests.map(arr => [...arr]);
     updated[sampleIdx][testIdx] = !updated[sampleIdx][testIdx];
     setSelectedTests(updated);
+  };
+
+  // Add a Sample button handler
+  const handleAddSample = () => {
+    if (numSamples < MAX_SAMPLES) {
+      setNumSamples(numSamples + 1);
+      setSampleDetails([
+        ...sampleDetails,
+        {
+          boreholeID: "",
+          top: "",
+          bottom: "",
+          TL101No: "",
+          type: "Bag",
+          length: "",
+          diameter: "",
+          weight: "",
+          fieldCollectionDate: "",
+          sameAsSampleNo: null,
+        },
+      ]);
+      setSelectedTests([
+        ...selectedTests,
+        Array(testTypes.length).fill(false),
+      ]);
+    }
   };
 
   // I am handling form submission
@@ -113,11 +178,11 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
           details.push({
             sampleNumber: i + 1,
             boreholeID: sampleDetails[i].boreholeID,
-            depthFrom: sampleDetails[i].depthFrom,
-            depthTo: sampleDetails[i].depthTo,
+            depthFrom: sampleDetails[i].top, // Assuming top is depthFrom
+            depthTo: sampleDetails[i].bottom, // Assuming bottom is depthTo
             TL101No: sampleDetails[i].TL101No,
-            tubeJar: sampleDetails[i].tubeJar,
-            quantity: sampleDetails[i].quantity,
+            tubeJar: "", // No longer applicable for Tube type
+            quantity: 1, // Assuming quantity is 1 for each test
             fieldCollectionDate: sampleDetails[i].fieldCollectionDate,
             testTypeId: testTypes[j].id,
             sameAsSampleNo: sampleDetails[i].sameAsSampleNo,
@@ -156,9 +221,10 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
   const districtOptions = ["District 1", "District 2", "District 3"];
   const countyOptions = ["County A", "County B", "County C"];
 
+  console.log(sampleDetails); // Debug: check the structure of sampleDetails
   // I am rendering the form (simplified for clarity)
   return (
-    <div className="container py-4">
+    <div className={`container py-4 ${numSamples > 4 ? 'many-samples' : ''}`}>
       <div className="card shadow p-4 mb-4">
         <h4 className="mb-3 sticky-header">
           GEOTECHNICAL LABORATORY TEST REQUEST
@@ -319,57 +385,90 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
           </div>
           {/* Sample Information */}
           <div className="card mb-3">
-            <div className="card-header bg-light fw-bold">Sample Information</div>
+            <div className="card-header bg-light fw-bold d-flex justify-content-between align-items-center">
+              <span>Sample Information</span>
+              <button type="button" className="btn btn-outline-primary btn-sm" onClick={handleAddSample} disabled={numSamples >= MAX_SAMPLES}>
+                Add a Sample
+              </button>
+            </div>
             <div className="card-body pb-2">
-              {/*
-              <div className="row mb-2">
-                <div className="col-md-3 mb-2">
-                  <label className="form-label">Number of Samples:</label>
-                  <input type="number" className="form-control form-control-sm" min="1" max="10" value={numSamples} onChange={e => setNumSamples(Number(e.target.value))} />
-                </div>
-                <div className="col-md-4 mb-2">
-                  <label className="form-label">Expected Sample Receipt Date:</label>
-                  <input type="date" className="form-control form-control-sm" value={expectedSampleReceiptDate} onChange={e => setExpectedSampleReceiptDate(e.target.value)} />
-                </div>
-              </div>
-              */}
               <div className="table-responsive mb-3">
                 <table className="table table-bordered align-middle text-center small">
                   <thead className="table-light">
                     <tr>
-                      <th>Sample ID (No.)</th>
+                      <th style={{ textAlign: 'right', verticalAlign: 'middle' }}>Sample ID (No.)</th>
                       {[...Array(numSamples)].map((_, n) => <th key={n}>{n + 1}</th>)}
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <td>Borehole ID</td>
-                      {[...Array(numSamples)].map((_, n) => <td key={n}><input type="text" className="form-control form-control-sm" value={sampleDetails[n]?.boreholeID || ""} onChange={e => handleSampleDetailChange(n, 'boreholeID', e.target.value)} /></td>)}
+                      <td style={{ textAlign: 'right' }}>Borehole ID</td>
+                      {[...Array(numSamples)].map((_, n) => (
+                        <td key={n}>
+                          <input type="text" className="form-control form-control-sm" value={sampleDetails[n]?.boreholeID || ""} onChange={e => handleSampleDetailChange(n, 'boreholeID', e.target.value)} />
+                        </td>
+                      ))}
                     </tr>
                     <tr>
-                      <td>Depth (ft): From</td>
-                      {[...Array(numSamples)].map((_, n) => <td key={n}><input type="text" className="form-control form-control-sm" value={sampleDetails[n]?.depthFrom || ""} onChange={e => handleSampleDetailChange(n, 'depthFrom', e.target.value)} /></td>)}
+                      <td style={{ textAlign: 'right' }}>Depth (ft): Top/Bottom</td>
+                      {[...Array(numSamples)].map((_, n) => (
+                        <td key={n}>
+                          <div className="d-flex justify-content-center align-items-center gap-1">
+                            <input type="text" className="form-control form-control-sm" placeholder="Top" value={sampleDetails[n]?.top || ""} onChange={e => handleSampleDetailChange(n, 'top', e.target.value)} style={{ width: 60 }} />/
+                            <input type="text" className="form-control form-control-sm" placeholder="Bottom" value={sampleDetails[n]?.bottom || ""} onChange={e => handleSampleDetailChange(n, 'bottom', e.target.value)} style={{ width: 60 }} />
+                          </div>
+                        </td>
+                      ))}
                     </tr>
                     <tr>
-                      <td>Depth (ft): To</td>
-                      {[...Array(numSamples)].map((_, n) => <td key={n}><input type="text" className="form-control form-control-sm" value={sampleDetails[n]?.depthTo || ""} onChange={e => handleSampleDetailChange(n, 'depthTo', e.target.value)} /></td>)}
+                      <td style={{ textAlign: 'right' }}>TL-101 No. <span className="text-muted" style={{ fontSize: '0.85em' }}>(if applicable)</span></td>
+                      {[...Array(numSamples)].map((_, n) => (
+                        <td key={n}>
+                          <input type="text" className="form-control form-control-sm" value={sampleDetails[n]?.TL101No || ""} onChange={e => handleSampleDetailChange(n, 'TL101No', e.target.value)} />
+                        </td>
+                      ))}
                     </tr>
                     <tr>
-                      <td>TL-101 No.</td>
-                      {[...Array(numSamples)].map((_, n) => <td key={n}><input type="text" className="form-control form-control-sm" value={sampleDetails[n]?.TL101No || ""} onChange={e => handleSampleDetailChange(n, 'TL101No', e.target.value)} /></td>)}
+                      <td style={{ textAlign: 'right' }}>Type</td>
+                      {[...Array(numSamples)].map((_, n) => (
+                        <td key={n}>
+                          <div className="d-flex justify-content-center align-items-center gap-2">
+                            <div className="form-check form-check-inline">
+                              <input className="form-check-input" type="radio" name={`type-${n}`} id={`bag-${n}`} value="Bag" checked={sampleDetails[n]?.type === "Bag"} onChange={() => handleTypeChange(n, "Bag")} />
+                              <label className="form-check-label" htmlFor={`bag-${n}`}>Bag</label>
+                            </div>
+                            <div className="form-check form-check-inline">
+                              <input className="form-check-input" type="radio" name={`type-${n}`} id={`tube-${n}`} value="Tube" checked={sampleDetails[n]?.type === "Tube"} onChange={() => handleTypeChange(n, "Tube")} />
+                              <label className="form-check-label" htmlFor={`tube-${n}`}>Tube</label>
+                            </div>
+                          </div>
+                        </td>
+                      ))}
                     </tr>
                     <tr>
-                      <td>Tube/Jar</td>
-                      {[...Array(numSamples)].map((_, n) => <td key={n}><input type="text" className="form-control form-control-sm" value={sampleDetails[n]?.tubeJar || ""} onChange={e => handleSampleDetailChange(n, 'tubeJar', e.target.value)} /></td>)}
+                      <td style={{ textAlign: 'right' }}>Size</td>
+                      {[...Array(numSamples)].map((_, n) => (
+                        <td key={n}>
+                          <div className="d-flex justify-content-center gap-1">
+                            {sampleDetails[n]?.type === "Tube" ? (
+                              <>
+                                <input type="text" className="form-control form-control-sm" placeholder="Length (in)" value={sampleDetails[n]?.length || ""} onChange={e => handleSampleDetailChange(n, 'length', e.target.value)} style={{ width: 70 }} />
+                                <input type="text" className="form-control form-control-sm" placeholder="Diameter (in)" value={sampleDetails[n]?.diameter || ""} onChange={e => handleSampleDetailChange(n, 'diameter', e.target.value)} style={{ width: 90 }} />
+                                <input type="text" className="form-control form-control-sm" placeholder="Weight (lb)" value={sampleDetails[n]?.weight || ""} onChange={e => handleSampleDetailChange(n, 'weight', e.target.value)} style={{ width: 90 }} />
+                              </>
+                            ) : (
+                              <input type="text" className="form-control form-control-sm" placeholder="Weight (lb)" value={sampleDetails[n]?.weight || ""} onChange={e => handleSampleDetailChange(n, 'weight', e.target.value)} style={{ width: 90 }} />
+                            )}
+                          </div>
+                        </td>
+                      ))}
                     </tr>
                     <tr>
-                      <td>Quantity (Repetition)</td>
-                      {[...Array(numSamples)].map((_, n) => <td key={n}><input type="number" className="form-control form-control-sm" min="1" value={sampleDetails[n]?.quantity || 1} onChange={e => handleSampleDetailChange(n, 'quantity', e.target.value)} /></td>)}
-                    </tr>
-                    <tr>
-                      <td>Sample Field Collection</td>
+                      <td style={{ textAlign: 'right' }}>Sample Field Collection</td>
                       {[...Array(numSamples)].map((_, n) => <td key={n}><input type="date" className="form-control form-control-sm" value={sampleDetails[n]?.fieldCollectionDate || ""} onChange={e => handleSampleDetailChange(n, 'fieldCollectionDate', e.target.value)} /></td>)}
                     </tr>
+                    {/* Same tests as sample No.? row removed as requested */}
+                    {/* Tests row removed as requested */}
                   </tbody>
                 </table>
               </div>

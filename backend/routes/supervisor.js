@@ -47,5 +47,16 @@ module.exports = (db) => {
     });
   });
 
+  // GET all supervisors for dropdown
+  router.get("/all", (req, res) => {
+    const query = "SELECT UserName, Email, Phone FROM users WHERE UserType = 'supervisor'";
+    db.query(query, (err, results) => {
+      if (err) {
+        return res.status(500).json({ message: "Database error" });
+      }
+      res.json(results);
+    });
+  });
+
   return router;
 };

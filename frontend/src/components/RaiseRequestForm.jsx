@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 function RaiseRequestForm({ userName, userEmail, userPhone }) {
   // I am setting up state for all the main fields
@@ -68,6 +68,26 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
     Array.from({ length: 5 }, () => Array(testTypes.length).fill(false))
   );
 
+  const [supervisors, setSupervisors] = useState([]);
+  useEffect(() => {
+    fetch("/api/supervisor/all")
+      .then(res => res.json())
+      .then(data => setSupervisors(data))
+      .catch(() => setSupervisors([]));
+  }, []);
+
+  // When supervisorName changes, auto-fill email and phone
+  useEffect(() => {
+    const selected = supervisors.find(s => s.UserName === supervisorName);
+    if (selected) {
+      setSupervisorEmail(selected.Email);
+      setSupervisorPhone(selected.Phone);
+    } else {
+      setSupervisorEmail("");
+      setSupervisorPhone("");
+    }
+  }, [supervisorName, supervisors]);
+
   // I am handling changes for sample details
   const handleSampleDetailChange = (idx, field, value) => {
     const updated = [...sampleDetails];
@@ -133,12 +153,19 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
 
   const officeOptions = ["Central Office", "North Branch", "South Branch"];
   const branchOptions = ["Branch A", "Branch B", "Branch C"];
+  const districtOptions = ["District 1", "District 2", "District 3"];
+  const countyOptions = ["County A", "County B", "County C"];
 
   // I am rendering the form (simplified for clarity)
   return (
     <div className="container py-4">
       <div className="card shadow p-4 mb-4">
-        <h4 className="mb-3">GEOTECHNICAL LABORATORY TEST REQUEST <span className="text-primary" style={{ fontStyle: 'italic', fontSize: '1rem' }}>(for Borehole Samples)</span></h4>
+        <h4 className="mb-3 sticky-header">
+          GEOTECHNICAL LABORATORY TEST REQUEST
+          <span className="text-primary" style={{ fontStyle: 'italic', fontSize: '1rem' }}>
+            (for Borehole Samples)
+          </span>
+        </h4>
         <form onSubmit={handleSubmit}>
           {/* Requester Information */}
           <div className="card mb-3">
@@ -173,17 +200,22 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
                 </div>
                 <div className="col-md-2 mb-2">
                   <label className="form-label">Supervisor Name:</label>
-                  <input type="text" className="form-control form-control-sm" value={supervisorName} onChange={e => setSupervisorName(e.target.value)} />
+                  <select className="form-control form-control-sm" value={supervisorName} onChange={e => setSupervisorName(e.target.value)}>
+                    <option value="">Select Supervisor</option>
+                    {supervisors.map(s => (
+                      <option key={s.UserName} value={s.UserName}>{s.UserName}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div className="row mb-2">
                 <div className="col-md-2 mb-2">
                   <label className="form-label">Supervisor Email:</label>
-                  <input type="email" className="form-control form-control-sm" value={supervisorEmail} onChange={e => setSupervisorEmail(e.target.value)} />
+                  <input type="email" className="form-control form-control-sm" value={supervisorEmail} readOnly />
                 </div>
                 <div className="col-md-2 mb-2">
                   <label className="form-label">Supervisor Phone:</label>
-                  <input type="tel" className="form-control form-control-sm" value={supervisorPhone} onChange={e => setSupervisorPhone(e.target.value)} />
+                  <input type="tel" className="form-control form-control-sm" value={supervisorPhone} readOnly />
                 </div>
                 <div className="col-md-2 mb-2">
                   <label className="form-label" style={{ whiteSpace: 'nowrap' }}>
@@ -222,11 +254,17 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
                 </div>
                 <div className="col-md-1 mb-2">
                   <label className="form-label">District:</label>
-                  <input type="text" className="form-control form-control-sm" value={district} onChange={e => setDistrict(e.target.value)} />
+                  <select className="form-control form-control-sm" value={district} onChange={e => setDistrict(e.target.value)}>
+                    <option value="">Select District</option>
+                    {districtOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
                 </div>
                 <div className="col-md-2 mb-2">
                   <label className="form-label">County:</label>
-                  <input type="text" className="form-control form-control-sm" value={county} onChange={e => setCounty(e.target.value)} />
+                  <select className="form-control form-control-sm" value={county} onChange={e => setCounty(e.target.value)}>
+                    <option value="">Select County</option>
+                    {countyOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
                 </div>
                 <div className="col-md-1 mb-2">
                   <label className="form-label">Route:</label>
@@ -283,6 +321,7 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
           <div className="card mb-3">
             <div className="card-header bg-light fw-bold">Sample Information</div>
             <div className="card-body pb-2">
+              {/*
               <div className="row mb-2">
                 <div className="col-md-3 mb-2">
                   <label className="form-label">Number of Samples:</label>
@@ -293,6 +332,7 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
                   <input type="date" className="form-control form-control-sm" value={expectedSampleReceiptDate} onChange={e => setExpectedSampleReceiptDate(e.target.value)} />
                 </div>
               </div>
+              */}
               <div className="table-responsive mb-3">
                 <table className="table table-bordered align-middle text-center small">
                   <thead className="table-light">

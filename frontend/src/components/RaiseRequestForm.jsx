@@ -72,28 +72,36 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
     }))
   );
 
-  // I am using a full array for all test types from the request form
+  // I am defining the test types with their methods based on the image
   const testTypes = [
-    { id: 1, name: "Moisture Content: ASTM D2216" },
-    { id: 2, name: "Unit Weight: ASTM D7263-B" },
-    { id: 3, name: "Particle Size Analysis" },
-    { id: 4, name: "Plasticity Index" },
-    { id: 5, name: "Specific Gravity: AASHTO T100" },
-    { id: 6, name: "Compaction: CTM 216" },
-    { id: 7, name: "Consolidation" },
-    { id: 8, name: "Direct Shear" },
-    { id: 9, name: "Triaxial (CU)" },
-    { id: 10, name: "Triaxial (UU)" },
-    { id: 11, name: "Unconfined Compression (Soil) (qu)" },
-    { id: 12, name: "Point Load Index: ASTM D5731" },
-    { id: 13, name: "Unconfined Compression (Rock): ASTM D7012-C" },
-    { id: 14, name: "Hydraulic Conductivity" },
-    { id: 15, name: "Corrosion: CTM 643,417,422" }
+    { id: 1, name: "Moisture Content", methods: ["ASTM D2216"] },
+    { id: 2, name: "Unit Weight", methods: ["ASTM D7263-B"] },
+    { id: 3, name: "Particle Size Analysis", methods: ["ASTM D422", "ASTM D6913"] },
+    { id: 4, name: "Plasticity Index", methods: ["ASTM D4318"] },
+    { id: 5, name: "Specific Gravity", methods: ["ASTM D854", "AASHTO T100"] },
+    { id: 6, name: "Compaction", methods: ["CTM 216", "ASTM D1557"] },
+    { id: 7, name: "Consolidation", methods: ["ASTM D2435"] },
+    { id: 8, name: "Direct Shear", methods: ["ASTM D3080"] },
+    { id: 9, name: "Triaxial (CU)", methods: ["ASTM D4767"] },
+    { id: 10, name: "Triaxial (UU)", methods: ["ASTM D2850"] },
+    { id: 11, name: "Unconfined Compression (Soil) (qu)", methods: ["ASTM D2166"] },
+    { id: 12, name: "Point Load Index", methods: ["ASTM D5731"] },
+    { id: 13, name: "Unconfined Compression (Rock)", methods: ["ASTM D7012-C"] },
+    { id: 14, name: "Hydraulic Conductivity", methods: ["ASTM D5084"] },
+    { id: 15, name: "Corrosion", methods: ["CTM 643", "CTM 417", "CTM 422"] }
   ];
-  // Update selectedTests to match the new testTypes length
-  const [selectedTests, setSelectedTests] = useState(
-    Array.from({ length: 2 }, () => Array(testTypes.length).fill(false))
+  // State for selected tests with method, sample, and quantity
+  // Initialize with one row for each test type, but not selected by default
+  const [selectedTestDetails, setSelectedTestDetails] = useState(
+    testTypes.map(test => ({
+      testTypeId: test.id,
+      method: test.methods && test.methods.length > 0 ? test.methods[0] : '',
+      sampleNumber: 1,
+      quantity: 1,
+      selected: false // Add selected property, default to false
+    }))
   );
+
 
   const [supervisors, setSupervisors] = useState([]);
   useEffect(() => {
@@ -134,11 +142,20 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
     setSampleDetails(updated);
   };
 
-  // I am handling test checkbox changes
-  const handleTestChange = (sampleIdx, testIdx) => {
-    const updated = selectedTests.map(arr => [...arr]);
-    updated[sampleIdx][testIdx] = !updated[sampleIdx][testIdx];
-    setSelectedTests(updated);
+  // Add a new test with default values
+  const handleAddNewTest = () => {
+    if (testTypes.length > 0 && numSamples > 0) {
+      const firstTest = testTypes[0];
+      setSelectedTestDetails([
+        ...selectedTestDetails,
+        {
+          testTypeId: firstTest.id,
+          method: firstTest.methods[0] || '',
+          sampleNumber: 1, // First sample
+          quantity: 1  // Default quantity
+        }
+      ]);
+    }
   };
 
   // Add a Sample button handler
@@ -160,37 +177,80 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
           sameAsSampleNo: null,
         },
       ]);
-      setSelectedTests([
-        ...selectedTests,
-        Array(testTypes.length).fill(false),
-      ]);
+      // No need to update selectedTests as we're now using selectedTestDetails
     }
   };
 
-  // I am handling form submission
+  // Handle updating test details
+  const handleUpdateTestDetail = (index, field, value, field2, value2) => {
+    // Find the existing detail for this test type or create a new one
+    const existingDetailIndex = selectedTestDetails.findIndex(td => td.testTypeId === value);
+    const updatedDetails = [...selectedTestDetails];
+    
+    if (existingDetailIndex >= 0) {
+      // Update existing detail
+      updatedDetails[existingDetailIndex] = {
+        ...updatedDetails[existingDetailIndex],
+        [field2]: value2
+      };
+    } else {
+      // Create new detail
+      updatedDetails.push({
+        testTypeId: value,
+        method: value2,
+        sampleNumber: 1,
+        quantity: 1,
+        selected: false
+      });
+    }
+    
+    setSelectedTestDetails(updatedDetails);
+  };
+  
+  // Handle toggling test selection
+  const handleToggleTestSelection = (index) => {
+    const updatedDetails = [...selectedTestDetails];
+    updatedDetails[index] = {
+      ...updatedDetails[index],
+      selected: !updatedDetails[index].selected
+    };
+    setSelectedTestDetails(updatedDetails);
+  };
+
+  // Handle removing a test
+  const handleRemoveTest = (index) => {
+    const updatedDetails = [...selectedTestDetails];
+    updatedDetails.splice(index, 1);
+    setSelectedTestDetails(updatedDetails);
+  };
+
+  // Handle form submission with new test selection interface
   const handleSubmit = async (e) => {
     e.preventDefault();
-    // I am building the details array for all selected tests
-    const details = [];
-    for (let i = 0; i < numSamples; i++) {
-      for (let j = 0; j < testTypes.length; j++) {
-        if (selectedTests[i][j]) {
-          details.push({
-            sampleNumber: i + 1,
-            boreholeID: sampleDetails[i].boreholeID,
-            depthFrom: sampleDetails[i].top, // Assuming top is depthFrom
-            depthTo: sampleDetails[i].bottom, // Assuming bottom is depthTo
-            TL101No: sampleDetails[i].TL101No,
-            tubeJar: "", // No longer applicable for Tube type
-            quantity: 1, // Assuming quantity is 1 for each test
-            fieldCollectionDate: sampleDetails[i].fieldCollectionDate,
-            testTypeId: testTypes[j].id,
-            sameAsSampleNo: sampleDetails[i].sameAsSampleNo,
-            comments: ""
-          });
-        }
-      }
-    }
+    
+    // Build the details array from selectedTestDetails - only include selected tests
+    const details = selectedTestDetails
+      .filter(test => test.selected) // Only include selected tests
+      .map(test => {
+        const sampleIndex = test.sampleNumber - 1;
+        return {
+          sampleNumber: test.sampleNumber,
+          boreholeID: sampleDetails[sampleIndex]?.boreholeID || '',
+          depthFrom: sampleDetails[sampleIndex]?.top || '',
+          depthTo: sampleDetails[sampleIndex]?.bottom || '',
+          TL101No: sampleDetails[sampleIndex]?.TL101No || '',
+          tubeJar: sampleDetails[sampleIndex]?.tubeJar || '',
+          quantity: test.quantity,
+          fieldCollectionDate: sampleDetails[sampleIndex]?.fieldCollectionDate || null,
+          testTypeId: test.testTypeId,
+          method: test.method, // Add the selected method
+          sameAsSampleNo: null, // No longer using sameAsSampleNo with the new interface
+          comments: ''
+        };
+      });
+    
+    console.log('Selected test details:', selectedTestDetails.filter(test => test.selected));
+    console.log('Details to submit:', details);
     // I am building the main request object
     const requestData = {
       office, branch, requesterName, requesterEmail, requesterPhone, supervisorName, supervisorEmail, supervisorPhone,
@@ -199,17 +259,20 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
       details
     };
     // I am submitting the request to the backend
+    console.log('Request data to submit:', requestData);
     try {
-      const res = await fetch('/api/requests', {
+      const res = await fetch('http://localhost:3001/api/requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestData)
       });
       const data = await res.json();
+      console.log('Response from server:', data);
       if (res.ok) {
         alert('Request submitted successfully!');
       } else {
         alert('Error: ' + (data.message || 'Failed to submit request'));
+        console.error('Server error details:', data);
       }
     } catch (err) {
       alert('Network error: ' + err.message);
@@ -489,51 +552,73 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {testTypes.map((test, testIdx) => {
-                      // Extract test name and methods
-                      const testName = test.name.split(':')[0].trim();
-                      const defaultMethod = test.name.split(':')[1]?.trim() || '';
-                      
-                      // Get methods for this test type
-                      let methods = [];
-                      if (testName === "Specific Gravity") {
-                        methods = ["ASTM D854", "AASHTO T100"];
-                      } else if (testName === "Unconfined Compression (Rock)") {
-                        methods = ["ASTM D2166", "ASTM D7012-C"];
-                      } else if (testName === "Corrosion") {
-                        methods = ["ASTM G51", "CTM 643", "CTM 417", "CTM 422"];
-                      } else {
-                        methods = [defaultMethod];
-                      }
+                    {/* Display tests with fixed test names */}
+                    {testTypes.map((test, index) => {
+                      const testDetail = selectedTestDetails.find(td => td.testTypeId === test.id) || {
+                        testTypeId: test.id,
+                        method: test.methods && test.methods.length > 0 ? test.methods[0] : '',
+                        sampleNumber: 1,
+                        quantity: 1,
+                        selected: false
+                      };
                       
                       return (
-                        <tr key={test.id}>
-                          <td>{testName}</td>
+                        <tr key={index}>
                           <td>
-                            <select className="form-select form-select-sm">
-                              {methods.map((method, idx) => (
-                                <option key={idx} value={method}>{method}</option>
+                            <div className="form-check">
+                              <input
+                                className="form-check-input"
+                                type="checkbox"
+                                checked={testDetail.selected}
+                                onChange={() => handleToggleTestSelection(index)}
+                                id={`test-select-${test.id}`}
+                              />
+                              <label className="form-check-label" htmlFor={`test-select-${test.id}`}>
+                                {test.name}
+                              </label>
+                            </div>
+                          </td>
+                          <td>
+                            <select 
+                              className="form-select form-select-sm"
+                              value={testDetail.method}
+                              onChange={(e) => handleUpdateTestDetail(index, 'testTypeId', test.id, 'method', e.target.value)}
+                              disabled={!testDetail.selected}
+                            >
+                              {test.methods && test.methods.map((method, i) => (
+                                <option key={i} value={method}>{method}</option>
                               ))}
                             </select>
                           </td>
                           <td>
-                            <select className="form-select form-select-sm">
+                            <select 
+                              className="form-select form-select-sm"
+                              value={testDetail.sampleNumber}
+                              onChange={(e) => handleUpdateTestDetail(index, 'testTypeId', test.id, 'sampleNumber', parseInt(e.target.value))}
+                              disabled={!testDetail.selected}
+                            >
                               {[...Array(numSamples)].map((_, n) => (
                                 <option key={n} value={n+1}>Sample {n + 1}</option>
                               ))}
                             </select>
                           </td>
                           <td>
-                            <select className="form-select form-select-sm">
+                            <select 
+                              className="form-select form-select-sm"
+                              value={testDetail.quantity}
+                              onChange={(e) => handleUpdateTestDetail(index, 'testTypeId', test.id, 'quantity', parseInt(e.target.value))}
+                              disabled={!testDetail.selected}
+                            >
                               {[...Array(6)].map((_, n) => (
                                 <option key={n} value={n+1}>{n + 1}</option>
                               ))}
                             </select>
                           </td>
-
                         </tr>
                       );
                     })}
+                    
+                    {/* No Add Test button as we're showing all test types */}
                   </tbody>
                 </table>
               </div>

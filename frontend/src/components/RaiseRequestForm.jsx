@@ -479,29 +479,61 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
             <div className="card-header bg-light fw-bold">Tests</div>
             <div className="card-body pb-2">
               <div className="table-responsive mb-3">
-                <table className="table table-bordered align-middle text-center small">
+                <table className="table table-bordered align-middle small">
                   <thead className="table-light">
                     <tr>
-                      <th>Test</th>
-                      {[...Array(numSamples)].map((_, n) => <th key={n}>Sample {n + 1}</th>)}
+                      <th>Test Name</th>
+                      <th>Method</th>
+                      <th>Sample</th>
+                      <th>Quantity</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {testTypes.map((test, testIdx) => (
-                      <tr key={test.id}>
-                        <td>{test.name}</td>
-                        {[...Array(numSamples)].map((_, n) => (
-                          <td key={n}>
-                            <input
-                              type="checkbox"
-                              className="form-check-input"
-                              checked={selectedTests[n][testIdx]}
-                              onChange={() => handleTestChange(n, testIdx)}
-                            />
+                    {testTypes.map((test, testIdx) => {
+                      // Extract test name and methods
+                      const testName = test.name.split(':')[0].trim();
+                      const defaultMethod = test.name.split(':')[1]?.trim() || '';
+                      
+                      // Get methods for this test type
+                      let methods = [];
+                      if (testName === "Specific Gravity") {
+                        methods = ["ASTM D854", "AASHTO T100"];
+                      } else if (testName === "Unconfined Compression (Rock)") {
+                        methods = ["ASTM D2166", "ASTM D7012-C"];
+                      } else if (testName === "Corrosion") {
+                        methods = ["ASTM G51", "CTM 643", "CTM 417", "CTM 422"];
+                      } else {
+                        methods = [defaultMethod];
+                      }
+                      
+                      return (
+                        <tr key={test.id}>
+                          <td>{testName}</td>
+                          <td>
+                            <select className="form-select form-select-sm">
+                              {methods.map((method, idx) => (
+                                <option key={idx} value={method}>{method}</option>
+                              ))}
+                            </select>
                           </td>
-                        ))}
-                      </tr>
-                    ))}
+                          <td>
+                            <select className="form-select form-select-sm">
+                              {[...Array(numSamples)].map((_, n) => (
+                                <option key={n} value={n+1}>Sample {n + 1}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td>
+                            <select className="form-select form-select-sm">
+                              {[...Array(6)].map((_, n) => (
+                                <option key={n} value={n+1}>{n + 1}</option>
+                              ))}
+                            </select>
+                          </td>
+
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -131,6 +131,9 @@ function RaiseRequestForm() {
     }
   };
 
+  const officeOptions = ["Central Office", "North Branch", "South Branch"];
+  const branchOptions = ["Branch A", "Branch B", "Branch C"];
+
   // I am rendering the form (simplified for clarity)
   return (
     <div className="container py-4">
@@ -144,11 +147,17 @@ function RaiseRequestForm() {
               <div className="row mb-2">
                 <div className="col-md-2 mb-2">
                   <label className="form-label">Office:</label>
-                  <input type="text" className="form-control form-control-sm" value={office} onChange={e => setOffice(e.target.value)} />
+                  <select className="form-control form-control-sm" value={office} onChange={e => setOffice(e.target.value)}>
+                    <option value="">Select Office</option>
+                    {officeOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
                 </div>
                 <div className="col-md-2 mb-2">
                   <label className="form-label">Branch:</label>
-                  <input type="text" className="form-control form-control-sm" value={branch} onChange={e => setBranch(e.target.value)} />
+                  <select className="form-control form-control-sm" value={branch} onChange={e => setBranch(e.target.value)}>
+                    <option value="">Select Branch</option>
+                    {branchOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
                 </div>
                 <div className="col-md-2 mb-2">
                   <label className="form-label">Requester Name:</label>
@@ -177,12 +186,19 @@ function RaiseRequestForm() {
                   <input type="tel" className="form-control form-control-sm" value={supervisorPhone} onChange={e => setSupervisorPhone(e.target.value)} />
                 </div>
                 <div className="col-md-2 mb-2">
-                  <label className="form-label">Test Results Due Date:</label>
+                  <label className="form-label" style={{ whiteSpace: 'nowrap' }}>
+                    Test Results Due Date:
+                    <span
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      title="Please allow a minimum of three weeks for completion of the test results after the sample is received."
+                      style={{ cursor: 'pointer', marginLeft: 4, verticalAlign: 'middle', display: 'inline-block' }}
+                      tabIndex={0}
+                    >
+                      <i className="bi bi-info-circle text-primary" style={{ fontSize: '1rem', verticalAlign: 'middle' }} />
+                    </span>
+                  </label>
                   <input type="date" className="form-control form-control-sm" value={testResultsDueDate} onChange={e => setTestResultsDueDate(e.target.value)} />
-                </div>
-                <div className="col-md-2 mb-2">
-                  <label className="form-label">Date of Request:</label>
-                  <input type="date" className="form-control form-control-sm" value={dateOfRequest} onChange={e => setDateOfRequest(e.target.value)} />
                 </div>
               </div>
             </div>

@@ -1255,3 +1255,19 @@ CREATE TABLE test_request_details (
 );
 select * from test_request;
 select * from test_request_details;
+
+--changes made on jul 15 2025
+--since I already had 2 users in the db i didnt want to specify not null constraints as that would throw an error
+ALTER TABLE users
+   ADD COLUMN Email VARCHAR(100),
+   ADD COLUMN Phone VARCHAR(20);
+   
+--update existing users
+UPDATE users SET Email='Rhea.Dsouza@dot.ca.gov', Phone='6695884446' WHERE UserID=1;
+UPDATE users SET Email='defivitals@gmail.com', Phone='9162891703' WHERE UserID=2;
+   
+--add not null constraint on email and phone
+ALTER TABLE users
+   MODIFY COLUMN Email VARCHAR(100) NOT NULL,
+   MODIFY COLUMN Phone VARCHAR(20) NOT NULL;
+   

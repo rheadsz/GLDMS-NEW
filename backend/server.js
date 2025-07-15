@@ -64,10 +64,10 @@ app.post("/api/login", (req, res) => {
       console.log("Invalid username or password");
       return res.status(401).json({ message: "Invalid username or password" });
     }
-    // Return userType (role) to frontend
+    // Return userType (role), userName, email, and phone to frontend
     const user = results[0];
     console.log("Login successful, userType:", user.UserType);
-    res.json({ userType: user.UserType });
+    res.json({ userType: user.UserType, userName: user.UserName, email: user.Email, phone: user.Phone });
   });
 });
 

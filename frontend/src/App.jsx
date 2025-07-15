@@ -61,14 +61,17 @@ const tabs = [
   { label: "Dummy Tab", content: <DummyTab /> },
 ];
 
-function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole }) {
+function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole, userName, setUserName, userEmail, setUserEmail, userPhone, setUserPhone }) {
   const [tab, setTab] = useState(0);
   const navigate = useNavigate();
 
   // Simulate login with role selection (replace with real login logic)
-  const handleSignIn = (role = "staff") => {
+  const handleSignIn = (role = "staff", name = "", email = "", phone = "") => {
     setSignedIn(true);
     setUserRole(role);
+    setUserName(name);
+    setUserEmail(email);
+    setUserPhone(phone);
     if (role === "supervisor") {
       navigate("/supervisor");
     } else {
@@ -136,7 +139,7 @@ function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole }) {
       <Route path="/raise-request" element={
         <div className="min-vh-100 bg-light">
           <Header showSignOut={true} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
-          <RaiseRequestForm />
+          <RaiseRequestForm userName={userName} userEmail={userEmail} userPhone={userPhone} />
         </div>
       } />
       <Route path="/main" element={
@@ -153,9 +156,23 @@ function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole }) {
 function App() {
   const [signedIn, setSignedIn] = useState(false);
   const [userRole, setUserRole] = useState(null); // 'staff' or 'supervisor'
+  const [userName, setUserName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const [userPhone, setUserPhone] = useState("");
   return (
     <Router>
-      <AppRoutes signedIn={signedIn} setSignedIn={setSignedIn} userRole={userRole} setUserRole={setUserRole} />
+      <AppRoutes
+        signedIn={signedIn}
+        setSignedIn={setSignedIn}
+        userRole={userRole}
+        setUserRole={setUserRole}
+        userName={userName}
+        setUserName={setUserName}
+        userEmail={userEmail}
+        setUserEmail={setUserEmail}
+        userPhone={userPhone}
+        setUserPhone={setUserPhone}
+      />
     </Router>
   );
 }

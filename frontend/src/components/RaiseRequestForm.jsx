@@ -1,12 +1,12 @@
 import React, { useState } from "react";
 
-function RaiseRequestForm() {
+function RaiseRequestForm({ userName, userEmail, userPhone }) {
   // I am setting up state for all the main fields
   const [office, setOffice] = useState("");
   const [branch, setBranch] = useState("");
-  const [requesterName, setRequesterName] = useState("");
-  const [requesterEmail, setRequesterEmail] = useState("");
-  const [requesterPhone, setRequesterPhone] = useState("");
+  const [requesterName, setRequesterName] = useState(userName || "");
+  const [requesterEmail, setRequesterEmail] = useState(userEmail || "");
+  const [requesterPhone, setRequesterPhone] = useState(userPhone || "");
   const [supervisorName, setSupervisorName] = useState("");
   const [supervisorEmail, setSupervisorEmail] = useState("");
   const [supervisorPhone, setSupervisorPhone] = useState("");
@@ -161,15 +161,15 @@ function RaiseRequestForm() {
                 </div>
                 <div className="col-md-2 mb-2">
                   <label className="form-label">Requester Name:</label>
-                  <input type="text" className="form-control form-control-sm" value={requesterName} onChange={e => setRequesterName(e.target.value)} />
+                  <input type="text" className="form-control form-control-sm" value={requesterName} readOnly />
                 </div>
                 <div className="col-md-2 mb-2">
                   <label className="form-label">Requester Email:</label>
-                  <input type="email" className="form-control form-control-sm" value={requesterEmail} onChange={e => setRequesterEmail(e.target.value)} />
+                  <input type="email" className="form-control form-control-sm" value={requesterEmail} readOnly />
                 </div>
                 <div className="col-md-2 mb-2">
                   <label className="form-label">Requester Phone:</label>
-                  <input type="tel" className="form-control form-control-sm" value={requesterPhone} onChange={e => setRequesterPhone(e.target.value)} />
+                  <input type="tel" className="form-control form-control-sm" value={requesterPhone} readOnly />
                 </div>
                 <div className="col-md-2 mb-2">
                   <label className="form-label">Supervisor Name:</label>

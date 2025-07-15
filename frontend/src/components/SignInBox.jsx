@@ -16,7 +16,7 @@ function SignInBox({ onSignIn }) {
       });
       const data = await res.json();
       if (res.ok && data.userType) {
-        onSignIn(data.userType); // Pass userType to parent
+        onSignIn(data.userType, data.userName, data.email, data.phone); // Pass user info up
       } else {
         setError(data.message || "Login failed");
       }

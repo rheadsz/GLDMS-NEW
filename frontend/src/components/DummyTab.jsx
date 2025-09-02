@@ -7,7 +7,7 @@ function DummyTab() {
 
   // Fetch test types from backend API
   useEffect(() => {
-    fetch("http://localhost:3001/api/test-types")
+    fetch("/api/test-types")
       .then((res) => {
         if (!res.ok) throw new Error("Network response was not ok");
         return res.json();

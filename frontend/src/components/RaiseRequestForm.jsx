@@ -261,7 +261,7 @@ function RaiseRequestForm({ userName, userEmail, userPhone }) {
     // I am submitting the request to the backend
     console.log('Request data to submit:', requestData);
     try {
-      const res = await fetch('http://localhost:3001/api/requests', {
+      const res = await fetch('/api/requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestData)

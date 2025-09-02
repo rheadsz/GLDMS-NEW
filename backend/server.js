@@ -1,6 +1,8 @@
 const express = require("express");
 const mysql = require("mysql2");
 const cors = require("cors");
+const fs = require('fs');
+const { parse } = require('csv-parse');
 
 const app = express();
 const port = 3001;
@@ -29,6 +31,8 @@ const supervisorRoutes = require("./routes/supervisor")(db);
 app.use("/api/supervisor", supervisorRoutes);
 const staffRequestsRoutes = require("./routes/staffrequests")(db);
 app.use("/api/requests", staffRequestsRoutes);
+const projectsRoutes = require("./routes/projects")(db);
+app.use("/api/projects", projectsRoutes);
 
 app.get("/api/test-types", (req, res) => {
   const query = "SELECT * FROM test_type";
@@ -39,6 +43,30 @@ app.get("/api/test-types", (req, res) => {
     }
     res.json(results);
   });
+});
+
+app.get('/api/project-info-options', (req, res) => {
+  const csvPath = __dirname + '/../Other/District_County_Route_Summary.csv';
+  const districts = new Set();
+  const counties = new Set();
+  const routes = new Set();
+  fs.createReadStream(csvPath)
+    .pipe(parse({ columns: true, trim: true }))
+    .on('data', (row) => {
+      if (row['District']) districts.add(row['District']);
+      if (row['County Name']) counties.add(row['County Name']);
+      if (row['Route']) routes.add(row['Route']);
+    })
+    .on('end', () => {
+      res.json({
+        districts: Array.from(districts).sort(),
+        counties: Array.from(counties).sort(),
+        routes: Array.from(routes).sort()
+      });
+    })
+    .on('error', (err) => {
+      res.status(500).json({ error: 'Failed to read project info options', details: err.message });
+    });
 });
 
 app.post("/api/login", (req, res) => {

@@ -1,0 +1,521 @@
+District,County Abbreviation,County Name,Route
+1,DN,Del Norte,101
+1,DN,Del Norte,169
+1,DN,Del Norte,197
+1,DN,Del Norte,199
+1,HUM,Humboldt,36
+1,HUM,Humboldt,96
+1,HUM,Humboldt,101
+1,HUM,Humboldt,169
+1,HUM,Humboldt,200
+1,HUM,Humboldt,211
+1,HUM,Humboldt,254
+1,HUM,Humboldt,255
+1,HUM,Humboldt,271
+1,HUM,Humboldt,283
+1,HUM,Humboldt,299
+1,LAK,Lake,20
+1,LAK,Lake,29
+1,LAK,Lake,53
+1,LAK,Lake,175
+1,LAK,Lake,281
+1,MEN,Mendocino,1
+1,MEN,Mendocino,20
+1,MEN,Mendocino,101
+1,MEN,Mendocino,128
+1,MEN,Mendocino,162
+1,MEN,Mendocino,175
+1,MEN,Mendocino,222
+1,MEN,Mendocino,253
+1,MEN,Mendocino,271
+2,LAS,Lassen,36
+2,LAS,Lassen,44
+2,LAS,Lassen,70
+2,LAS,Lassen,139
+2,LAS,Lassen,147
+2,LAS,Lassen,299
+2,LAS,Lassen,395
+2,MOD,Modoc,139
+2,MOD,Modoc,299
+2,MOD,Modoc,395
+2,PLU,Plumas,36
+2,PLU,Plumas,49
+2,PLU,Plumas,70
+2,PLU,Plumas,89
+2,PLU,Plumas,147
+2,PLU,Plumas,284
+2,SHA,Shasta,5
+2,SHA,Shasta,36
+2,SHA,Shasta,44
+2,SHA,Shasta,89
+2,SHA,Shasta,151
+2,SHA,Shasta,273
+2,SHA,Shasta,299
+2,SIS,Siskiyou,3
+2,SIS,Siskiyou,5
+2,SIS,Siskiyou,89
+2,SIS,Siskiyou,96
+2,SIS,Siskiyou,97
+2,SIS,Siskiyou,139
+2,SIS,Siskiyou,161
+2,SIS,Siskiyou,263
+2,SIS,Siskiyou,265
+2,TEH,Tehama,5
+2,TEH,Tehama,32
+2,TEH,Tehama,36
+2,TEH,Tehama,89
+2,TEH,Tehama,99
+2,TEH,Tehama,172
+2,TRI,Trinity,3
+2,TRI,Trinity,36
+2,TRI,Trinity,299
+3,BUT,Butte,32
+3,BUT,Butte,70
+3,BUT,Butte,99
+3,BUT,Butte,149
+3,BUT,Butte,162
+3,BUT,Butte,191
+3,COL,Colusa,5
+3,COL,Colusa,16
+3,COL,Colusa,20
+3,COL,Colusa,45
+3,ED,El Dorado,49
+3,ED,El Dorado,50
+3,ED,El Dorado,89
+3,ED,El Dorado,153
+3,ED,El Dorado,193
+3,GLE,Glenn,5
+3,GLE,Glenn,32
+3,GLE,Glenn,45
+3,GLE,Glenn,162
+3,NEV,Nevada,20
+3,NEV,Nevada,49
+3,NEV,Nevada,80
+3,NEV,Nevada,89
+3,NEV,Nevada,174
+3,NEV,Nevada,267
+3,PLA,Placer,20
+3,PLA,Placer,28
+3,PLA,Placer,49
+3,PLA,Placer,65
+3,PLA,Placer,80
+3,PLA,Placer,89
+3,PLA,Placer,174
+3,PLA,Placer,193
+3,PLA,Placer,267
+3,SAC,Sacramento,5
+3,SAC,Sacramento,12
+3,SAC,Sacramento,16
+3,SAC,Sacramento,50
+3,SAC,Sacramento,51
+3,SAC,Sacramento,80
+3,SAC,Sacramento,99
+3,SAC,Sacramento,104
+3,SAC,Sacramento,160
+3,SAC,Sacramento,220
+3,SAC,Sacramento,244
+3,SAC,Sacramento,275
+3,SIE,Sierra,49
+3,SIE,Sierra,80
+3,SIE,Sierra,89
+3,SIE,Sierra,395
+3,SUT,Sutter,20
+3,SUT,Sutter,70
+3,SUT,Sutter,99
+3,SUT,Sutter,113
+3,YOL,Yolo,5
+3,YOL,Yolo,16
+3,YOL,Yolo,45
+3,YOL,Yolo,50
+3,YOL,Yolo,80
+3,YOL,Yolo,84
+3,YOL,Yolo,113
+3,YOL,Yolo,128
+3,YOL,Yolo,275
+3,YOL,Yolo,505
+3,YUB,Yuba,20
+3,YUB,Yuba,49
+3,YUB,Yuba,65
+3,YUB,Yuba,70
+4,ALA,Alameda,13
+4,ALA,Alameda,24
+4,ALA,Alameda,61
+4,ALA,Alameda,77
+4,ALA,Alameda,80
+4,ALA,Alameda,84
+4,ALA,Alameda,92
+4,ALA,Alameda,112
+4,ALA,Alameda,123
+4,ALA,Alameda,185
+4,ALA,Alameda,205
+4,ALA,Alameda,238
+4,ALA,Alameda,260
+4,ALA,Alameda,262
+4,ALA,Alameda,580
+4,ALA,Alameda,680
+4,ALA,Alameda,880
+4,ALA,Alameda,980
+4,CC,Contra Costa,4
+4,CC,Contra Costa,24
+4,CC,Contra Costa,80
+4,CC,Contra Costa,123
+4,CC,Contra Costa,160
+4,CC,Contra Costa,242
+4,CC,Contra Costa,580
+4,CC,Contra Costa,680
+4,MRN,Marin,1
+4,MRN,Marin,37
+4,MRN,Marin,101
+4,MRN,Marin,131
+4,MRN,Marin,580
+4,NAP,Napa,12
+4,NAP,Napa,29
+4,NAP,Napa,80
+4,NAP,Napa,121
+4,NAP,Napa,128
+4,NAP,Napa,221
+4,SCL,Santa Clara,9
+4,SCL,Santa Clara,17
+4,SCL,Santa Clara,25
+4,SCL,Santa Clara,35
+4,SCL,Santa Clara,82
+4,SCL,Santa Clara,85
+4,SCL,Santa Clara,87
+4,SCL,Santa Clara,101
+4,SCL,Santa Clara,130
+4,SCL,Santa Clara,152
+4,SCL,Santa Clara,156
+4,SCL,Santa Clara,237
+4,SCL,Santa Clara,280
+4,SCL,Santa Clara,680
+4,SCL,Santa Clara,880
+4,SF,San Francisco,1
+4,SF,San Francisco,35
+4,SF,San Francisco,80
+4,SF,San Francisco,82
+4,SF,San Francisco,101
+4,SF,San Francisco,280
+4,SM,San Mateo,1
+4,SM,San Mateo,35
+4,SM,San Mateo,82
+4,SM,San Mateo,84
+4,SM,San Mateo,92
+4,SM,San Mateo,101
+4,SM,San Mateo,109
+4,SM,San Mateo,114
+4,SM,San Mateo,280
+4,SM,San Mateo,380
+4,SOL,Solano,12
+4,SOL,Solano,29
+4,SOL,Solano,37
+4,SOL,Solano,80
+4,SOL,Solano,84
+4,SOL,Solano,113
+4,SOL,Solano,128
+4,SOL,Solano,220
+4,SOL,Solano,505
+4,SOL,Solano,680
+4,SOL,Solano,780
+4,SON,Sonoma,1
+4,SON,Sonoma,12
+4,SON,Sonoma,37
+4,SON,Sonoma,101
+4,SON,Sonoma,116
+4,SON,Sonoma,121
+4,SON,Sonoma,128
+5,MON,Monterey,1
+5,MON,Monterey,25
+5,MON,Monterey,68
+5,MON,Monterey,101
+5,MON,Monterey,146
+5,MON,Monterey,156
+5,MON,Monterey,183
+5,MON,Monterey,198
+5,MON,Monterey,218
+5,SB,Santa Barbara,1
+5,SB,Santa Barbara,33
+5,SB,Santa Barbara,101
+5,SB,Santa Barbara,135
+5,SB,Santa Barbara,144
+5,SB,Santa Barbara,150
+5,SB,Santa Barbara,154
+5,SB,Santa Barbara,166
+5,SB,Santa Barbara,192
+5,SB,Santa Barbara,217
+5,SB,Santa Barbara,246
+5,SBT,San Benito,25
+5,SBT,San Benito,101
+5,SBT,San Benito,129
+5,SBT,San Benito,146
+5,SBT,San Benito,156
+5,SCR,Santa Cruz,1
+5,SCR,Santa Cruz,9
+5,SCR,Santa Cruz,17
+5,SCR,Santa Cruz,35
+5,SCR,Santa Cruz,129
+5,SCR,Santa Cruz,152
+5,SCR,Santa Cruz,236
+5,SLO,San Luis Obispo,1
+5,SLO,San Luis Obispo,33
+5,SLO,San Luis Obispo,41
+5,SLO,San Luis Obispo,46
+5,SLO,San Luis Obispo,58
+5,SLO,San Luis Obispo,101
+5,SLO,San Luis Obispo,166
+5,SLO,San Luis Obispo,227
+5,SLO,San Luis Obispo,229
+6,FRE,Fresno,5
+6,FRE,Fresno,33
+6,FRE,Fresno,41
+6,FRE,Fresno,43
+6,FRE,Fresno,63
+6,FRE,Fresno,99
+6,FRE,Fresno,145
+6,FRE,Fresno,168
+6,FRE,Fresno,180
+6,FRE,Fresno,198
+6,FRE,Fresno,201
+6,FRE,Fresno,245
+6,FRE,Fresno,269
+6,KER,Kern,5
+6,KER,Kern,33
+6,KER,Kern,41
+6,KER,Kern,43
+6,KER,Kern,46
+6,KER,Kern,58
+6,KER,Kern,65
+6,KER,Kern,99
+6,KER,Kern,119
+6,KER,Kern,155
+6,KER,Kern,166
+6,KER,Kern,178
+6,KER,Kern,184
+6,KER,Kern,204
+6,KER,Kern,223
+6,KIN,Kings,5
+6,KIN,Kings,33
+6,KIN,Kings,41
+6,KIN,Kings,43
+6,KIN,Kings,137
+6,KIN,Kings,198
+6,KIN,Kings,269
+6,MAD,Madera,41
+6,MAD,Madera,49
+6,MAD,Madera,59
+6,MAD,Madera,99
+6,MAD,Madera,145
+6,MAD,Madera,152
+6,MAD,Madera,233
+6,TUL,Tulare,43
+6,TUL,Tulare,63
+6,TUL,Tulare,65
+6,TUL,Tulare,99
+6,TUL,Tulare,137
+6,TUL,Tulare,180
+6,TUL,Tulare,190
+6,TUL,Tulare,198
+6,TUL,Tulare,201
+6,TUL,Tulare,216
+6,TUL,Tulare,245
+7,LA,Los Angeles,1
+7,LA,Los Angeles,2
+7,LA,Los Angeles,5
+7,LA,Los Angeles,10
+7,LA,Los Angeles,14
+7,LA,Los Angeles,18
+7,LA,Los Angeles,22
+7,LA,Los Angeles,23
+7,LA,Los Angeles,27
+7,LA,Los Angeles,39
+7,LA,Los Angeles,47
+7,LA,Los Angeles,57
+7,LA,Los Angeles,60
+7,LA,Los Angeles,66
+7,LA,Los Angeles,71
+7,LA,Los Angeles,72
+7,LA,Los Angeles,90
+7,LA,Los Angeles,91
+7,LA,Los Angeles,101
+7,LA,Los Angeles,103
+7,LA,Los Angeles,105
+7,LA,Los Angeles,107
+7,LA,Los Angeles,110
+7,LA,Los Angeles,118
+7,LA,Los Angeles,126
+7,LA,Los Angeles,134
+7,LA,Los Angeles,138
+7,LA,Los Angeles,164
+7,LA,Los Angeles,170
+7,LA,Los Angeles,187
+7,LA,Los Angeles,210
+7,LA,Los Angeles,213
+7,LA,Los Angeles,405
+7,LA,Los Angeles,605
+7,LA,Los Angeles,710
+7,VEN,Ventura,1
+7,VEN,Ventura,23
+7,VEN,Ventura,33
+7,VEN,Ventura,34
+7,VEN,Ventura,101
+7,VEN,Ventura,118
+7,VEN,Ventura,126
+7,VEN,Ventura,150
+7,VEN,Ventura,232
+8,RIV,Riverside,10
+8,RIV,Riverside,15
+8,RIV,Riverside,60
+8,RIV,Riverside,62
+8,RIV,Riverside,71
+8,RIV,Riverside,74
+8,RIV,Riverside,78
+8,RIV,Riverside,79
+8,RIV,Riverside,86
+8,RIV,Riverside,91
+8,RIV,Riverside,95
+8,RIV,Riverside,111
+8,RIV,Riverside,177
+8,RIV,Riverside,215
+8,RIV,Riverside,243
+8,RIV,Riverside,371
+8,SBD,San Bernardino,2
+8,SBD,San Bernardino,10
+8,SBD,San Bernardino,15
+8,SBD,San Bernardino,18
+8,SBD,San Bernardino,38
+8,SBD,San Bernardino,40
+8,SBD,San Bernardino,58
+8,SBD,San Bernardino,60
+8,SBD,San Bernardino,62
+8,SBD,San Bernardino,66
+8,SBD,San Bernardino,71
+8,SBD,San Bernardino,83
+8,SBD,San Bernardino,95
+8,SBD,San Bernardino,127
+8,SBD,San Bernardino,138
+8,SBD,San Bernardino,142
+8,SBD,San Bernardino,173
+8,SBD,San Bernardino,178
+8,SBD,San Bernardino,189
+8,SBD,San Bernardino,210
+8,SBD,San Bernardino,215
+8,SBD,San Bernardino,247
+8,SBD,San Bernardino,259
+8,SBD,San Bernardino,330
+8,SBD,San Bernardino,395
+9,INY,Inyo,6
+9,INY,Inyo,127
+9,INY,Inyo,136
+9,INY,Inyo,168
+9,INY,Inyo,178
+9,INY,Inyo,190
+9,INY,Inyo,395
+9,KER,Kern,14
+9,KER,Kern,58
+9,KER,Kern,178
+9,KER,Kern,202
+9,KER,Kern,395
+9,MNO,Mono,6
+9,MNO,Mono,89
+9,MNO,Mono,108
+9,MNO,Mono,120
+9,MNO,Mono,158
+9,MNO,Mono,167
+9,MNO,Mono,168
+9,MNO,Mono,182
+9,MNO,Mono,203
+9,MNO,Mono,266
+9,MNO,Mono,270
+9,MNO,Mono,395
+10,ALP,Alpine,4
+10,ALP,Alpine,88
+10,ALP,Alpine,89
+10,ALP,Alpine,207
+10,AMA,Amador,16
+10,AMA,Amador,26
+10,AMA,Amador,49
+10,AMA,Amador,88
+10,AMA,Amador,104
+10,AMA,Amador,124
+10,CAL,Calaveras,4
+10,CAL,Calaveras,12
+10,CAL,Calaveras,26
+10,CAL,Calaveras,49
+10,MER,Merced,5
+10,MER,Merced,33
+10,MER,Merced,59
+10,MER,Merced,99
+10,MER,Merced,140
+10,MER,Merced,152
+10,MER,Merced,165
+10,MPA,Mariposa,49
+10,MPA,Mariposa,120
+10,MPA,Mariposa,132
+10,MPA,Mariposa,140
+10,SJ,San Joaquin,4
+10,SJ,San Joaquin,5
+10,SJ,San Joaquin,12
+10,SJ,San Joaquin,26
+10,SJ,San Joaquin,33
+10,SJ,San Joaquin,88
+10,SJ,San Joaquin,99
+10,SJ,San Joaquin,120
+10,SJ,San Joaquin,132
+10,SJ,San Joaquin,205
+10,SJ,San Joaquin,580
+10,STA,Stanislaus,4
+10,STA,Stanislaus,5
+10,STA,Stanislaus,33
+10,STA,Stanislaus,99
+10,STA,Stanislaus,108
+10,STA,Stanislaus,120
+10,STA,Stanislaus,132
+10,STA,Stanislaus,165
+10,STA,Stanislaus,219
+10,TUO,Tuolumne,49
+10,TUO,Tuolumne,108
+10,TUO,Tuolumne,120
+10,TUO,Tuolumne,132
+11,IMP,Imperial,7
+11,IMP,Imperial,8
+11,IMP,Imperial,78
+11,IMP,Imperial,86
+11,IMP,Imperial,98
+11,IMP,Imperial,111
+11,IMP,Imperial,115
+11,IMP,Imperial,186
+11,SD,San Diego,5
+11,SD,San Diego,8
+11,SD,San Diego,11
+11,SD,San Diego,15
+11,SD,San Diego,52
+11,SD,San Diego,54
+11,SD,San Diego,56
+11,SD,San Diego,67
+11,SD,San Diego,75
+11,SD,San Diego,76
+11,SD,San Diego,78
+11,SD,San Diego,79
+11,SD,San Diego,94
+11,SD,San Diego,125
+11,SD,San Diego,163
+11,SD,San Diego,188
+11,SD,San Diego,282
+11,SD,San Diego,805
+11,SD,San Diego,905
+12,ORA,Orange,1
+12,ORA,Orange,5
+12,ORA,Orange,22
+12,ORA,Orange,39
+12,ORA,Orange,55
+12,ORA,Orange,57
+12,ORA,Orange,72
+12,ORA,Orange,73
+12,ORA,Orange,74
+12,ORA,Orange,90
+12,ORA,Orange,91
+12,ORA,Orange,133
+12,ORA,Orange,142
+12,ORA,Orange,241
+12,ORA,Orange,261
+12,ORA,Orange,405
+12,ORA,Orange,605

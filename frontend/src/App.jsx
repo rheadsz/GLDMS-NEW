@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import Header from "./components/Header";
 import SignInBox from "./components/SignInBox";
@@ -8,6 +8,9 @@ import DummyTab from "./components/DummyTab";
 import RaiseRequestForm from "./components/RaiseRequestForm";
 import SupervisorMenu from "./components/SupervisorMenu";
 import ManageRequests from "./components/MangageResquestSupervisor";
+import CreateProjectWizard from "./components/CreateProjectWizard";
+import ProjectsPage from "./pages/ProjectsPage";
+import ProjectsTable from "./components/ProjectsTable";
 
 function SupervisorDashboard() {
   return (
@@ -32,7 +35,10 @@ function ProjectManagement() {
   return (
     <div>
       <h2 className="h2 mb-3">Project Management</h2>
-      <p>Manage projects and related data. This tab will contain project management functionality.</p>
+      <p>Manage projects and related data.</p>
+      <div className="mt-3">
+        <a href="/projects" className="btn btn-primary">View Projects</a>
+      </div>
     </div>
   );
 }
@@ -72,6 +78,12 @@ function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole, userName, set
     setUserName(name);
     setUserEmail(email);
     setUserPhone(phone);
+    // Persist to localStorage
+    localStorage.setItem('signedIn', 'true');
+    localStorage.setItem('userRole', role);
+    localStorage.setItem('userName', name);
+    localStorage.setItem('userEmail', email);
+    localStorage.setItem('userPhone', phone);
     if (role === "supervisor") {
       navigate("/supervisor");
     } else {
@@ -133,13 +145,58 @@ function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole, userName, set
       <Route path="/menu" element={
         <div className="min-vh-100 bg-light">
           <Header showSignOut={true} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
-          <RequestMenu onMain={() => navigate("/main")} onRaiseRequest={() => navigate("/raise-request")} />
+          <div className="container py-4">
+            <div className="row mb-4">
+              <div className="col-12">
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <h4 className="m-0">Projects</h4>
+                </div>
+                <div className="card shadow">
+                  <div className="card-body p-0">
+                    <ProjectsTable />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       } />
-      <Route path="/raise-request" element={
+      <Route path="/projects" element={
         <div className="min-vh-100 bg-light">
           <Header showSignOut={true} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
-          <RaiseRequestForm userName={userName} userEmail={userEmail} userPhone={userPhone} />
+          <ProjectsPage />
+        </div>
+      } />
+      <Route path="/create-project" element={
+        <div className="min-vh-100 bg-light">
+          <Header showSignOut={true} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
+          <CreateProjectWizard
+            userName={userName}
+            userEmail={userEmail}
+            userPhone={userPhone}
+            supervisors={[]} // TODO: fetch and pass supervisors as in RaiseRequestForm
+            officeOptions={["Central Office", "North Branch", "South Branch"]}
+            branchOptions={["Branch A", "Branch B", "Branch C"]}
+            districtOptions={["District 1", "District 2", "District 3"]}
+            countyOptions={["County A", "County B", "County C"]}
+            testTypes={[
+              { id: 1, name: "Moisture Content", methods: ["ASTM D2216"] },
+              { id: 2, name: "Unit Weight", methods: ["ASTM D7263-B"] },
+              { id: 3, name: "Particle Size Analysis", methods: ["ASTM D422", "ASTM D6913"] },
+              { id: 4, name: "Plasticity Index", methods: ["ASTM D4318"] },
+              { id: 5, name: "Specific Gravity", methods: ["ASTM D854", "AASHTO T100"] },
+              { id: 6, name: "Compaction", methods: ["CTM 216", "ASTM D1557"] },
+              { id: 7, name: "Consolidation", methods: ["ASTM D2435"] },
+              { id: 8, name: "Direct Shear", methods: ["ASTM D3080"] },
+              { id: 9, name: "Triaxial (CU)", methods: ["ASTM D4767"] },
+              { id: 10, name: "Triaxial (UU)", methods: ["ASTM D2850"] },
+              { id: 11, name: "Unconfined Compression (Soil) (qu)", methods: ["ASTM D2166"] },
+              { id: 12, name: "Point Load Index", methods: ["ASTM D5731"] },
+              { id: 13, name: "Unconfined Compression (Rock)", methods: ["ASTM D7012-C"] },
+              { id: 14, name: "Hydraulic Conductivity", methods: ["ASTM D5084"] },
+              { id: 15, name: "Corrosion", methods: ["CTM 643", "CTM 417", "CTM 422"] }
+            ]}
+          />
         </div>
       } />
       <Route path="/main" element={
@@ -154,11 +211,22 @@ function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole, userName, set
 }
 
 function App() {
-  const [signedIn, setSignedIn] = useState(false);
-  const [userRole, setUserRole] = useState(null); // 'staff' or 'supervisor'
-  const [userName, setUserName] = useState("");
-  const [userEmail, setUserEmail] = useState("");
-  const [userPhone, setUserPhone] = useState("");
+  // Initialize state from localStorage
+  const [signedIn, setSignedIn] = useState(localStorage.getItem('signedIn') === 'true');
+  const [userRole, setUserRole] = useState(localStorage.getItem('userRole') || null);
+  const [userName, setUserName] = useState(localStorage.getItem('userName') || "");
+  const [userEmail, setUserEmail] = useState(localStorage.getItem('userEmail') || "");
+  const [userPhone, setUserPhone] = useState(localStorage.getItem('userPhone') || "");
+
+  // Keep localStorage in sync if state changes (optional, for robustness)
+  useEffect(() => {
+    localStorage.setItem('signedIn', signedIn ? 'true' : 'false');
+    if (userRole) localStorage.setItem('userRole', userRole);
+    if (userName) localStorage.setItem('userName', userName);
+    if (userEmail) localStorage.setItem('userEmail', userEmail);
+    if (userPhone) localStorage.setItem('userPhone', userPhone);
+  }, [signedIn, userRole, userName, userEmail, userPhone]);
+
   return (
     <Router>
       <AppRoutes

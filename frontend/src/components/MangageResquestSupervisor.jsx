@@ -6,7 +6,7 @@ function ManageRequests() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("http://localhost:3001/api/supervisor/requests")
+    fetch("/api/supervisor/requests")
       .then(res => res.json())
       .then(data => {
         setRequests(data);

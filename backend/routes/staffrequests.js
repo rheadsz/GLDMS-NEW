@@ -1,12 +1,13 @@
 const express = require("express");
 const router = express.Router();
+const { sendRequestNotifications } = require('../utils/emailService');
 
 module.exports = (db) => {
   // POST /api/requests - Staff submits a form
   router.post("/", (req, res) => {
     console.log('Received form submission:', JSON.stringify(req.body, null, 2));
     const data = req.body;
-    // Set DateOfRequest to today (YYYY-MM-DD)
+    // Sets DateOfRequest to today (YYYY-MM-DD)
     const today = new Date();
     const yyyy = today.getFullYear();
     const mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -112,7 +113,36 @@ module.exports = (db) => {
           }
           
           console.log('Successfully inserted test_request_details');
-          res.json({ message: "Request submitted successfully", requestId });
+          
+          // Send email notifications to requester and supervisor
+          try {
+            sendRequestNotifications(data, requestId, details)
+              .then(emailResults => {
+                console.log('Email notifications sent:', emailResults);
+                res.json({ 
+                  message: "Request submitted successfully and notifications sent", 
+                  requestId,
+                  emailsSent: true
+                });
+              })
+              .catch(emailErr => {
+                console.error('Failed to send email notifications:', emailErr);
+                // Still return success for the request, but note that emails failed
+                res.json({ 
+                  message: "Request submitted successfully but email notifications failed", 
+                  requestId,
+                  emailsSent: false
+                });
+              });
+          } catch (emailError) {
+            console.error('Error in email notification process:', emailError);
+            // Still return success for the request, but note that emails failed
+            res.json({ 
+              message: "Request submitted successfully but email notifications failed", 
+              requestId,
+              emailsSent: false
+            });
+          }
         });
       });
     } catch (error) {

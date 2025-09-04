@@ -2,7 +2,7 @@ const express = require("express");
 const mysql = require("mysql2");
 const cors = require("cors");
 const fs = require('fs');
-const { parse } = require('csv-parse');
+const { parse } = require('csv-parser');
 
 const app = express();
 const port = 3001;
@@ -15,7 +15,7 @@ app.use(express.json());
 const db = mysql.createConnection({
   host: "127.0.0.1",
   user: "root",
-  password: "",
+  password: "Aryan@786",
   database: "gldms_2025",
   port: 3306,
 });

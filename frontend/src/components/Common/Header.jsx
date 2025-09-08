@@ -1,6 +1,6 @@
 import React from "react";
 
-function Header({ showSignOut, onSignOut }) {
+function Header({ showSignOut, onSignOut, userName }) {
   return (
     <header className="sticky-site-header">
       <nav className="navbar navbar-expand-lg navbar-light bg-white shadow-sm border-bottom mb-3 p-0" style={{ minHeight: 72 }}>
@@ -15,15 +15,23 @@ function Header({ showSignOut, onSignOut }) {
               Geotechnical Lab Database Management System
             </span>
           </div>
-          {showSignOut && (
-            <button
-              className="btn btn-danger ms-auto"
-              onClick={onSignOut}
-              aria-label="Sign out"
-            >
-              Sign Out
-            </button>
-          )}
+          <div className="d-flex align-items-center ms-auto">
+            {showSignOut && userName && (
+              <span className="me-3 text-dark fw-medium">
+                <i className="bi bi-person-circle me-1"></i>
+                {userName}
+              </span>
+            )}
+            {showSignOut && (
+              <button
+                className="btn btn-danger"
+                onClick={onSignOut}
+                aria-label="Sign out"
+              >
+                Sign Out
+              </button>
+            )}
+          </div>
         </div>
       </nav>
     </header>

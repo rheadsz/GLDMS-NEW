@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
-import Header from "./components/Header";
+import Header from "./components/Common/Header";
 import SignInBox from "./components/SignInBox";
 import RequestMenu from "./components/RequestMenu";
 import TabsDashboard from "./components/TabsDashboard";
@@ -8,9 +8,9 @@ import DummyTab from "./components/DummyTab";
 import RaiseRequestForm from "./components/RaiseRequestForm";
 import SupervisorMenu from "./components/SupervisorMenu";
 import ManageRequests from "./components/MangageResquestSupervisor";
-import CreateProjectWizard from "./components/CreateProjectWizard";
+import CreateProjectWizard from "./components/ProjectWizard/CreateProjectWizard";
 import ProjectsPage from "./pages/ProjectsPage";
-import ProjectsTable from "./components/ProjectsTable";
+import SimpleProjectsTable from "./components/SimpleProjectsTable";
 
 function SupervisorDashboard() {
   return (
@@ -96,7 +96,7 @@ function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole, userName, set
       <Routes>
         <Route path="/*" element={
           <div className="min-vh-100 bg-light">
-            <Header showSignOut={false} />
+            <Header showSignOut={false} userName="" />
             <div className="d-flex flex-column align-items-center justify-content-center" style={{ minHeight: 'calc(100vh - 72px)' }}>
               <SignInBox onSignIn={handleSignIn} />
             </div>
@@ -112,7 +112,7 @@ function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole, userName, set
       <Routes>
         <Route path="/supervisor" element={
           <div className="min-vh-100 bg-light">
-            <Header showSignOut={true} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
+            <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
             <SupervisorMenu />
           </div>
           
@@ -123,6 +123,7 @@ function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole, userName, set
           <div className="min-vh-100 bg-light">
             <Header
               showSignOut={true}
+              userName={userName}
               onSignOut={() => {
                 setSignedIn(false);
                 setUserRole(null);
@@ -144,7 +145,7 @@ function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole, userName, set
     <Routes>
       <Route path="/menu" element={
         <div className="min-vh-100 bg-light">
-          <Header showSignOut={true} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
+          <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
           <div className="container py-4">
             <div className="row mb-4">
               <div className="col-12">
@@ -153,7 +154,7 @@ function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole, userName, set
                 </div>
                 <div className="card shadow">
                   <div className="card-body p-0">
-                    <ProjectsTable />
+                    <SimpleProjectsTable />
                   </div>
                 </div>
               </div>
@@ -163,13 +164,13 @@ function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole, userName, set
       } />
       <Route path="/projects" element={
         <div className="min-vh-100 bg-light">
-          <Header showSignOut={true} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
+          <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
           <ProjectsPage />
         </div>
       } />
       <Route path="/create-project" element={
         <div className="min-vh-100 bg-light">
-          <Header showSignOut={true} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
+          <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
           <CreateProjectWizard
             userName={userName}
             userEmail={userEmail}
@@ -201,7 +202,7 @@ function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole, userName, set
       } />
       <Route path="/main" element={
         <div className="min-vh-100 bg-light text-dark">
-          <Header showSignOut={true} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
+          <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
           <TabsDashboard tab={tab} setTab={setTab} tabs={tabs} />
         </div>
       } />

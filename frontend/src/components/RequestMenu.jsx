@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import ProjectsTable from "./ProjectsTable";
+import SimpleProjectsTable from "./SimpleProjectsTable";
 
 function RequestMenu({ onMain, onRaiseRequest }) {
   return (
@@ -30,7 +30,7 @@ function RequestMenu({ onMain, onRaiseRequest }) {
               <h4 className="m-0">Projects</h4>
             </div>
             <div className="card-body p-0">
-              <ProjectsTable />
+              <SimpleProjectsTable />
             </div>
           </div>
         </div>

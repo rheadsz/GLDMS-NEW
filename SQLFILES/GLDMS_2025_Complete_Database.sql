@@ -1256,18 +1256,202 @@ CREATE TABLE test_request_details (
 select * from test_request;
 select * from test_request_details;
 
---changes made on jul 15 2025
---since I already had 2 users in the db i didnt want to specify not null constraints as that would throw an error
 ALTER TABLE users
    ADD COLUMN Email VARCHAR(100),
    ADD COLUMN Phone VARCHAR(20);
    
---update existing users
+
 UPDATE users SET Email='Rhea.Dsouza@dot.ca.gov', Phone='6695884446' WHERE UserID=1;
 UPDATE users SET Email='defivitals@gmail.com', Phone='9162891703' WHERE UserID=2;
    
---add not null constraint on email and phone
+
 ALTER TABLE users
    MODIFY COLUMN Email VARCHAR(100) NOT NULL,
    MODIFY COLUMN Phone VARCHAR(20) NOT NULL;
    
+select * from project;
+use gldms_2025;
+show tables;
+
+
+use gldms_2025;
+select * from project;
+select * from users;
+-- =====================================================
+-- GLDMS 2025 - Project Wizard Tables
+-- =====================================================
+-- Created: 2025-09-07
+-- Purpose: Store project wizard data with relationships
+-- =====================================================
+
+-- =====================================================
+-- PROJECT STRUCTURES TABLE
+-- =====================================================
+DROP TABLE IF EXISTS `project_structures`;
+CREATE TABLE `project_structures` (
+  `StructureID` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Primary key for structure',
+  `ProjectID` mediumint(10) unsigned NOT NULL COMMENT 'Foreign key to project table',
+  `StructureNumber` varchar(50) NOT NULL COMMENT 'Structure ID or name',
+  `CreatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Record creation timestamp',
+  `UpdatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Record update timestamp',
+  `CreatedBy` varchar(50) DEFAULT NULL COMMENT 'User who created the record',
+  `UpdatedBy` varchar(50) DEFAULT NULL COMMENT 'User who last updated the record',
+  PRIMARY KEY (`StructureID`),
+  KEY `idx_project_structures_project` (`ProjectID`),
+  CONSTRAINT `fk_project_structures_project` FOREIGN KEY (`ProjectID`) REFERENCES `project` (`ProjectID`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Project structures table';
+
+-- =====================================================
+-- PROJECT BOREHOLES TABLE
+-- =====================================================
+DROP TABLE IF EXISTS `project_boreholes`;
+CREATE TABLE `project_boreholes` (
+  `BoreholeID` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Primary key for borehole',
+  `StructureID` int unsigned NOT NULL COMMENT 'Foreign key to project_structures table',
+  `BoreholeNumber` varchar(50) NOT NULL COMMENT 'Borehole ID or number',
+  `Latitude` decimal(10,6) DEFAULT NULL COMMENT 'Latitude coordinate',
+  `Longitude` decimal(10,6) DEFAULT NULL COMMENT 'Longitude coordinate',
+  `Northing` decimal(12,3) DEFAULT NULL COMMENT 'Northing coordinate',
+  `Easting` decimal(12,3) DEFAULT NULL COMMENT 'Easting coordinate',
+  `GroundSurfaceElevation` decimal(8,2) DEFAULT NULL COMMENT 'Ground surface elevation',
+  `CreatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Record creation timestamp',
+  `UpdatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Record update timestamp',
+  `CreatedBy` varchar(50) DEFAULT NULL COMMENT 'User who created the record',
+  `UpdatedBy` varchar(50) DEFAULT NULL COMMENT 'User who last updated the record',
+  PRIMARY KEY (`BoreholeID`),
+  KEY `idx_project_boreholes_structure` (`StructureID`),
+  CONSTRAINT `fk_project_boreholes_structure` FOREIGN KEY (`StructureID`) REFERENCES `project_structures` (`StructureID`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Project boreholes table';
+
+-- =====================================================
+-- PROJECT SAMPLES TABLE
+-- =====================================================
+DROP TABLE IF EXISTS `project_samples`;
+CREATE TABLE `project_samples` (
+  `SampleID` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Primary key for sample',
+  `BoreholeID` int unsigned NOT NULL COMMENT 'Foreign key to project_boreholes table',
+  `SampleNumber` varchar(50) NOT NULL COMMENT 'Sample ID or number',
+  `DepthFrom` decimal(8,2) DEFAULT NULL COMMENT 'Sample depth from',
+  `DepthTo` decimal(8,2) DEFAULT NULL COMMENT 'Sample depth to',
+  `TL101Number` varchar(50) DEFAULT NULL COMMENT 'TL-101 form number',
+  `ContainerType` enum('Tube','Jar') DEFAULT 'Tube' COMMENT 'Sample container type',
+  `Quantity` int DEFAULT NULL COMMENT 'Sample quantity',
+  `FieldCollectionDate` date DEFAULT NULL COMMENT 'Field collection date',
+  `CreatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Record creation timestamp',
+  `UpdatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Record update timestamp',
+  `CreatedBy` varchar(50) DEFAULT NULL COMMENT 'User who created the record',
+  `UpdatedBy` varchar(50) DEFAULT NULL COMMENT 'User who last updated the record',
+  PRIMARY KEY (`SampleID`),
+  KEY `idx_project_samples_borehole` (`BoreholeID`),
+  CONSTRAINT `fk_project_samples_borehole` FOREIGN KEY (`BoreholeID`) REFERENCES `project_boreholes` (`BoreholeID`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Project samples table';
+
+-- =====================================================
+-- PROJECT TESTS TABLE
+-- =====================================================
+DROP TABLE IF EXISTS `project_tests`;
+CREATE TABLE `project_tests` (
+  `TestID` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Primary key for test',
+  `SampleID` int unsigned NOT NULL COMMENT 'Foreign key to project_samples table',
+  `TestTypeID` tinyint(3) unsigned NOT NULL COMMENT 'Foreign key to test_type table',
+  `Status` enum('Requested','In Progress','Completed','Cancelled') DEFAULT 'Requested' COMMENT 'Test status',
+  `RequestedDate` date DEFAULT NULL COMMENT 'Date test was requested',
+  `CompletedDate` date DEFAULT NULL COMMENT 'Date test was completed',
+  `Notes` text DEFAULT NULL COMMENT 'Test notes',
+  `CreatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Record creation timestamp',
+  `UpdatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Record update timestamp',
+  `CreatedBy` varchar(50) DEFAULT NULL COMMENT 'User who created the record',
+  `UpdatedBy` varchar(50) DEFAULT NULL COMMENT 'User who last updated the record',
+  PRIMARY KEY (`TestID`),
+  KEY `idx_project_tests_sample` (`SampleID`),
+  KEY `idx_project_tests_test_type` (`TestTypeID`),
+  CONSTRAINT `fk_project_tests_sample` FOREIGN KEY (`SampleID`) REFERENCES `project_samples` (`SampleID`) ON DELETE CASCADE,
+  CONSTRAINT `fk_project_tests_test_type` FOREIGN KEY (`TestTypeID`) REFERENCES `test_type` (`TestTypeID`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Project tests table';
+
+-- =====================================================
+-- Add RequestingUser column to project_tests table
+-- =====================================================
+-- Created: 2025-09-07
+-- Purpose: Track which user submitted each test request
+-- =====================================================
+
+-- Add RequestingUser column to project_tests table
+ALTER TABLE `project_tests` 
+ADD COLUMN `RequestingUser` varchar(100) DEFAULT NULL COMMENT 'Username of person who requested the test' AFTER `Status`;
+
+-- Update the existing CreatedBy column description to clarify its purpose
+ALTER TABLE `project_tests` 
+MODIFY COLUMN `CreatedBy` varchar(50) DEFAULT NULL COMMENT 'User who created the record in the system';
+
+-- Create an index on RequestingUser for faster queries
+CREATE INDEX `idx_project_tests_requesting_user` ON `project_tests` (`RequestingUser`);
+
+-- =====================================================
+-- Alter EA column in project table
+-- =====================================================
+-- Created: 2025-09-07
+-- Purpose: Increase the size of EA column to accommodate longer values
+-- =====================================================
+
+-- Check current column definition
+SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH 
+FROM INFORMATION_SCHEMA.COLUMNS 
+WHERE TABLE_SCHEMA = 'gldms_2025' 
+AND TABLE_NAME = 'project' 
+AND COLUMN_NAME = 'EA';
+
+-- Alter EA column to increase size
+ALTER TABLE `project` 
+MODIFY COLUMN `EA` varchar(20) NOT NULL DEFAULT '' COMMENT 'Expenditure authorization - maps to DIGGS otherProjectProperty';
+
+
+
+
+CREATE TABLE project_requests (
+  RequestID INT AUTO_INCREMENT PRIMARY KEY,
+  ProjectID MEDIUMINT UNSIGNED NOT NULL,
+  RequestingUser VARCHAR(100) NOT NULL,
+  RequestDate DATETIME DEFAULT CURRENT_TIMESTAMP,
+  Status ENUM('Submitted', 'In Progress', 'Completed', 'Rejected') DEFAULT 'Submitted',
+  Notes TEXT,
+  FOREIGN KEY (ProjectID) REFERENCES project(ProjectID)
+);
+
+
+-- Add RequestID column to all project-related tables
+
+-- Add RequestID to project_structures table
+ALTER TABLE project_structures 
+ADD COLUMN RequestID INT,
+ADD CONSTRAINT fk_structures_request
+FOREIGN KEY (RequestID) REFERENCES project_requests(RequestID);
+
+-- Add RequestID to project_boreholes table
+ALTER TABLE project_boreholes 
+ADD COLUMN RequestID INT,
+ADD CONSTRAINT fk_boreholes_request
+FOREIGN KEY (RequestID) REFERENCES project_requests(RequestID);
+
+-- Add RequestID to project_samples table
+ALTER TABLE project_samples 
+ADD COLUMN RequestID INT,
+ADD CONSTRAINT fk_samples_request
+FOREIGN KEY (RequestID) REFERENCES project_requests(RequestID);
+
+-- Add RequestID to project_tests table
+ALTER TABLE project_tests 
+ADD COLUMN RequestID INT,
+ADD CONSTRAINT fk_tests_request
+FOREIGN KEY (RequestID) REFERENCES project_requests(RequestID);
+
+ALTER TABLE project
+ADD COLUMN EfisProjectId VARCHAR(50);
+
+-- Add an index to improve query performance
+CREATE INDEX idx_efis_project_id ON project(EfisProjectId);
+select * from visiondb;

@@ -34,6 +34,16 @@ app.use("/api/requests", staffRequestsRoutes);
 const projectsRoutes = require("./routes/projects")(db);
 app.use("/api/projects", projectsRoutes);
 
+// User projects route
+const userProjectsRoutes = require("./routes/user-projects")(db);
+app.use("/api/user-projects", userProjectsRoutes);
+
+// Use the projects_wizard routes
+const projectsWizardRoutes = require("./routes/projects_wizard")(db);
+app.use("/api/project-wizard", projectsWizardRoutes); // Changed path to avoid conflict
+const visiondbRoutes = require("./routes/visiondb");
+app.use("/api/visiondb", visiondbRoutes);
+
 app.get("/api/test-types", (req, res) => {
   const query = "SELECT * FROM test_type";
   db.query(query, (err, results) => {

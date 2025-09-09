@@ -6,19 +6,19 @@ module.exports = (db) => {
   router.get("/", (req, res) => {
     const sql = `
       SELECT 
-        p.ProjectID, 
-        p.GLTrackNumber as EfisProjectId,
+        p.EfisProjectId as ProjectID, 
+        p.EfisProjectId,
         p.ProjectName,
         p.EA, 
         p.District, 
-        p.County as CountyCode, 
-        p.Route as RouteCode, 
-        p.StructureNumber as StructureNo, 
-        'active' as Status,
-        p.PMFrom as PostmileBegin,
-        p.PMTo as PostmileEnd,
+        p.County, 
+        p.Route, 
+        p.StructureNumber, 
+        'Submitted' as Status,
+        p.PMFrom,
+        p.PMTo,
         '' as ProjectComponent,
-        p.ClientLastName as CreatedBy,
+        p.CreatedBy,
         p.CreatedAt
       FROM 
         project p
@@ -111,7 +111,7 @@ module.exports = (db) => {
       'active', // Default status
       data.createdBy || 'system',
       dateCreated,
-      data.efisProjectId || data.projectID, // Use EfisProjectId if provided, otherwise use projectID
+      data.efisProjectId || data.projectID, // EfisProjectId if provided, otherwise  projectID
       data.projectName || ''
     ];
     

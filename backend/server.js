@@ -1,8 +1,8 @@
 const express = require("express");
 const mysql = require("mysql2");
 const cors = require("cors");
-const fs = require('fs');
-const { parse } = require('csv-parser');
+const fs = require("fs");
+const { parse } = require("csv-parser");
 
 const app = express();
 const port = 3001;
@@ -15,7 +15,7 @@ app.use(express.json());
 const db = mysql.createConnection({
   host: "127.0.0.1",
   user: "root",
-  password: "",
+  password: "Aryan@786",
   database: "gldms_2025",
   port: 3306,
 });
@@ -45,27 +45,32 @@ app.get("/api/test-types", (req, res) => {
   });
 });
 
-app.get('/api/project-info-options', (req, res) => {
-  const csvPath = __dirname + '/../Other/District_County_Route_Summary.csv';
+app.get("/api/project-info-options", (req, res) => {
+  const csvPath = __dirname + "/../Other/District_County_Route_Summary.csv";
   const districts = new Set();
   const counties = new Set();
   const routes = new Set();
   fs.createReadStream(csvPath)
     .pipe(parse({ columns: true, trim: true }))
-    .on('data', (row) => {
-      if (row['District']) districts.add(row['District']);
-      if (row['County Name']) counties.add(row['County Name']);
-      if (row['Route']) routes.add(row['Route']);
+    .on("data", (row) => {
+      if (row["District"]) districts.add(row["District"]);
+      if (row["County Name"]) counties.add(row["County Name"]);
+      if (row["Route"]) routes.add(row["Route"]);
     })
-    .on('end', () => {
+    .on("end", () => {
       res.json({
         districts: Array.from(districts).sort(),
         counties: Array.from(counties).sort(),
-        routes: Array.from(routes).sort()
+        routes: Array.from(routes).sort(),
       });
     })
-    .on('error', (err) => {
-      res.status(500).json({ error: 'Failed to read project info options', details: err.message });
+    .on("error", (err) => {
+      res
+        .status(500)
+        .json({
+          error: "Failed to read project info options",
+          details: err.message,
+        });
     });
 });
 
@@ -95,7 +100,12 @@ app.post("/api/login", (req, res) => {
     // Return userType (role), userName, email, and phone to frontend
     const user = results[0];
     console.log("Login successful, userType:", user.UserType);
-    res.json({ userType: user.UserType, userName: user.UserName, email: user.Email, phone: user.Phone });
+    res.json({
+      userType: user.UserType,
+      userName: user.UserName,
+      email: user.Email,
+      phone: user.Phone,
+    });
   });
 });
 

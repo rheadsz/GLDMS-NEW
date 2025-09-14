@@ -1,21 +1,30 @@
+// server.js
 const express = require("express");
 const mysql = require("mysql2");
 const cors = require("cors");
 const fs = require("fs");
-const { parse } = require("csv-parser");
+const { parse } = require("csv-parser"); // keep as in your original file
 
 const app = express();
 const port = 3001;
 
 console.log("Starting server.js...");
 
+// Core middleware
 app.use(cors());
 app.use(express.json());
 
+// Log every incoming request (method + path)
+app.use((req, _res, next) => {
+  console.log(`[REQ] ${req.method} ${req.originalUrl}`);
+  next();
+});
+
+// ---- MySQL Connection ----
 const db = mysql.createConnection({
   host: "127.0.0.1",
   user: "root",
-  password: "Aryan@786",
+  password: "",
   database: "gldms_2025",
   port: 3306,
 });
@@ -27,29 +36,38 @@ db.connect((err) => {
   }
   console.log("Connected to database as id " + db.threadId);
 });
+
+// ---- Routes ----
 const supervisorRoutes = require("./routes/supervisor")(db);
 app.use("/api/supervisor", supervisorRoutes);
+
 const staffRequestsRoutes = require("./routes/staffrequests")(db);
 app.use("/api/requests", staffRequestsRoutes);
+
 const projectsRoutes = require("./routes/projects")(db);
 app.use("/api/projects", projectsRoutes);
+
+
 
 // User projects route
 const userProjectsRoutes = require("./routes/user-projects")(db);
 app.use("/api/user-projects", userProjectsRoutes);
 
-// Use the projects_wizard routes
+// Projects wizard
 const projectsWizardRoutes = require("./routes/projects_wizard")(db);
-app.use("/api/project-wizard", projectsWizardRoutes); // Changed path to avoid conflict
+app.use("/api/project-wizard", projectsWizardRoutes);
+
+// Vision DB (no db injection in your original code)
 const visiondbRoutes = require("./routes/visiondb");
 app.use("/api/visiondb", visiondbRoutes);
 
+
+// ---- Ad-hoc endpoints from your original file ----
 app.get("/api/test-types", (req, res) => {
   const query = "SELECT * FROM test_type";
   db.query(query, (err, results) => {
     if (err) {
-      res.status(500).send(err);
-      return;
+      return res.status(500).send(err);
     }
     res.json(results);
   });
@@ -60,6 +78,7 @@ app.get("/api/project-info-options", (req, res) => {
   const districts = new Set();
   const counties = new Set();
   const routes = new Set();
+
   fs.createReadStream(csvPath)
     .pipe(parse({ columns: true, trim: true }))
     .on("data", (row) => {
@@ -75,24 +94,19 @@ app.get("/api/project-info-options", (req, res) => {
       });
     })
     .on("error", (err) => {
-      res
-        .status(500)
-        .json({
-          error: "Failed to read project info options",
-          details: err.message,
-        });
+      res.status(500).json({
+        error: "Failed to read project info options",
+        details: err.message,
+      });
     });
 });
 
 app.post("/api/login", (req, res) => {
-  // Log the incoming request body (for debugging)
   console.log("Login attempt:", req.body);
 
   const { username, password } = req.body;
-  const query =
-    "SELECT * FROM users WHERE UserName = ? AND Password = ? LIMIT 1";
+  const query = "SELECT * FROM users WHERE UserName = ? AND Password = ? LIMIT 1";
 
-  // Log the query and parameters
   console.log("Executing query:", query, "with params:", [username, password]);
 
   db.query(query, [username, password], (err, results) => {
@@ -100,14 +114,14 @@ app.post("/api/login", (req, res) => {
       console.error("Database error:", err);
       return res.status(500).json({ message: "Database error" });
     }
-    // Log the results from the database
+
     console.log("Query results:", results);
 
     if (results.length === 0) {
       console.log("Invalid username or password");
       return res.status(401).json({ message: "Invalid username or password" });
     }
-    // Return userType (role), userName, email, and phone to frontend
+
     const user = results[0];
     console.log("Login successful, userType:", user.UserType);
     res.json({
@@ -119,6 +133,16 @@ app.post("/api/login", (req, res) => {
   });
 });
 
+// Simple health endpoint
+app.get("/health", (_req, res) => res.send("OK"));
+
+// 404 fallback (keep last)
+app.use((req, res) => {
+  console.warn(`[404] ${req.method} ${req.originalUrl}`);
+  res.status(404).send("Not Found");
+});
+
+// ---- Start server ----
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
 });

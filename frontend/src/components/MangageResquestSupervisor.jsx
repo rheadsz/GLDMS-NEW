@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
-import LabManagerTab from "./LabManagerTab";
+import AssignmentDetails from "./AssignmentDetails"; // ⟵ new component
 
 function AppWithSidebar() {
   // Tabs
@@ -82,7 +82,7 @@ function AppWithSidebar() {
     return "text-muted";
   };
 
-  const SIDEBAR_OPEN_PX = 640;  // a touch wider for breathing room
+  const SIDEBAR_OPEN_PX = 640;
   const SIDEBAR_CLOSED_PX = 0;
 
   return (
@@ -100,25 +100,14 @@ function AppWithSidebar() {
         }
         .lm-content { flex: 1 1 auto; min-width: 0; }
         .lm-sticky-head { position: sticky; top: 0; z-index: 1; background: #fff; }
-
-        /* Hamburger */
         .lm-hamburger {
           width: 40px; height: 36px; display: inline-flex; align-items: center; justify-content: center;
           border: 1px solid var(--bs-border-color, #dee2e6); border-radius: .5rem; background: #fff;
         }
         .lm-hamburger:focus { outline: 2px solid #6ea8fe; outline-offset: 2px; }
-
-        /* Table polish */
-        .tbl-assignments {
-          table-layout: fixed;
-        }
-        .tbl-assignments th,
-        .tbl-assignments td {
-          padding: 10px 12px !important;
-          vertical-align: middle;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
+        .tbl-assignments { table-layout: fixed; }
+        .tbl-assignments th, .tbl-assignments td {
+          padding: 10px 12px !important; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .mono {
           font-variant-numeric: tabular-nums;
@@ -126,7 +115,6 @@ function AppWithSidebar() {
         }
         .linklike { color: var(--bs-primary); text-decoration: none; }
         .linklike:hover { text-decoration: underline; }
-
         @media (max-width: 768px) {
           .lm-sidebar { position: absolute; z-index: 1040; height: calc(100% - 52px); }
           .lm-content { flex-basis: 100%; }
@@ -152,9 +140,7 @@ function AppWithSidebar() {
           {["assignments", "samples", "tests", "staff", "projects"].map((tab) => (
             <button
               key={tab}
-              className={`btn btn-sm ${
-                activeTab === tab ? "btn-primary" : "btn-outline-primary"
-              }`}
+              className={`btn btn-sm ${activeTab === tab ? "btn-primary" : "btn-outline-primary"}`}
               onClick={() => setActiveTab(tab)}
             >
               {tab === "staff" ? "Resources/Staff" : tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -208,12 +194,11 @@ function AppWithSidebar() {
             {/* Table */}
             <div className="flex-grow-1 overflow-auto">
               <table className="table table-sm table-hover table-striped mb-0 align-middle tbl-assignments">
-                {/* Fixed column widths */}
                 <colgroup>
-                  <col style={{ width: "16%" }} /> {/* Request No. */}
-                  <col style={{ width: "28%" }} /> {/* Project ID */}
-                  <col style={{ width: "28%" }} /> {/* Requester */}
-                  <col style={{ width: "28%" }} /> {/* Status */}
+                  <col style={{ width: "16%" }} />
+                  <col style={{ width: "28%" }} />
+                  <col style={{ width: "28%" }} />
+                  <col style={{ width: "28%" }} />
                 </colgroup>
 
                 <thead className="table-light sticky-top" style={{ top: 0 }}>
@@ -274,54 +259,7 @@ function AppWithSidebar() {
           {/* RIGHT: Details */}
           <section className="lm-content">
             <div className="p-4 h-100 overflow-auto">
-              {selectedRequest ? (
-                <>
-                  <div className="d-flex justify-content-between align-items-start mb-2">
-                    <div>
-                      <h5 className="mb-1">
-                        Assignment #{selectedRequest.RequestID} — EFIS&nbsp;
-                        <span className="mono">{selectedRequest.EfisProjectId ?? "—"}</span>
-                      </h5>
-                      <div className="text-muted small">
-                        Requester: {selectedRequest.CreatedBy ?? "—"}
-                      </div>
-                    </div>
-
-                    {/* Status quick actions */}
-                    <div className="d-flex gap-2">
-                      <button
-                        className="btn btn-primary btn-sm"
-                        onClick={() => updateStatus(selectedRequest.RequestID, "In Progress")}
-                        disabled={
-                          selectedRequest.Status === "In Progress" ||
-                          selectedRequest.Status === "Completed"
-                        }
-                      >
-                        Start (In Progress)
-                      </button>
-                      <button
-                        className="btn btn-success btn-sm"
-                        onClick={() => updateStatus(selectedRequest.RequestID, "Completed")}
-                        disabled={selectedRequest.Status === "Completed"}
-                      >
-                        Mark Completed
-                      </button>
-                      <button
-                        className="btn btn-warning btn-sm"
-                        onClick={() => updateStatus(selectedRequest.RequestID, "Rejected")}
-                        disabled={selectedRequest.Status === "Rejected"}
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-
-                  <hr className="my-2" />
-                  <LabManagerTab selectedRequest={selectedRequest} />
-                </>
-              ) : (
-                <div className="text-muted">Select an assignment to view its details.</div>
-              )}
+              <AssignmentDetails request={selectedRequest} />
             </div>
           </section>
         </div>

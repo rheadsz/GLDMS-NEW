@@ -206,13 +206,26 @@ function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSampl
             >
               <i className="bi bi-arrow-left me-1"></i> Previous
             </button>
-            <button 
-              type="button" 
-              className="btn btn-primary" 
-              onClick={() => onChange({ ...data, samples: samples, _nextStep: true })}
-            >
-              Next <i className="bi bi-arrow-right"></i>
-            </button>
+            <div>
+              <button 
+                type="button" 
+                className="btn btn-success me-2" 
+                onClick={() => {
+                  // Handle submit action here
+                  alert('Samples submitted successfully!');
+                  // You can also add custom submission logic here
+                }}
+              >
+                <i className="bi bi-check-circle me-1"></i> Submit
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-primary" 
+                onClick={() => onChange({ ...data, samples: samples, _nextStep: true })}
+              >
+                Next <i className="bi bi-arrow-right"></i>
+              </button>
+            </div>
           </div>
         </div>
       </div>

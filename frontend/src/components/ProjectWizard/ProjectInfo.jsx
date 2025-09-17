@@ -3,6 +3,7 @@ import axios from "axios";
 
 function ProjectInfo({ data, onChange }) {
   const [error, setError] = useState(null);
+  const [structures, setStructures] = useState(data.structures || []);
 
   // Function to fetch project data from visiondb
   const fetchProjectData = useCallback(async (projectId) => {
@@ -116,20 +117,94 @@ function ProjectInfo({ data, onChange }) {
           </div>
         </div>
         
-        {/* Fifth row - Project Component */}
-        <div className="row mb-2">
-          <div className="col-md-12 mb-2">
-            <label className="form-label">Project Component:</label>
-            <input type="text" className="form-control form-control-sm" value={data.projectComponent || ""} onChange={e => onChange({ ...data, projectComponent: e.target.value })} />
+        {/* Fifth row - Structures Section */}
+        <div className="row mb-3">
+          <div className="col-12">
+            <div className="d-flex justify-content-between align-items-center mb-2">
+              <h5 className="card-title mb-0">Structures</h5>
+              <button 
+                type="button" 
+                className="btn btn-success btn-sm"
+                onClick={() => {
+                  const newStructures = [...structures, { 
+                    id: Date.now().toString(),
+                    projectComponent: '',
+                    structureNo: '' 
+                  }];
+                  setStructures(newStructures);
+                  onChange({ ...data, structures: newStructures });
+                }}
+              >
+                <i className="bi bi-plus-circle me-1"></i> Add New Structure
+              </button>
+            </div>
+            
+            {/* Display added structures */}
+            {structures.length > 0 ? (
+              <div className="structures-container">
+                {structures.map((structure, index) => (
+                  <div key={structure.id} className="structure-row border p-3 mb-2 rounded bg-light">
+                    <div className="d-flex justify-content-between mb-2">
+                      <strong>Structure {index + 1}</strong>
+                      <button 
+                        type="button" 
+                        className="btn btn-outline-danger btn-sm"
+                        onClick={() => {
+                          const newStructures = structures.filter(s => s.id !== structure.id);
+                          setStructures(newStructures);
+                          onChange({ ...data, structures: newStructures });
+                        }}
+                      >
+                        <i className="bi bi-trash"></i>
+                      </button>
+                    </div>
+                    <div className="row">
+                      <div className="col-md-6">
+                        <label className="form-label">Project Component:</label>
+                        <input 
+                          type="text" 
+                          className="form-control form-control-sm" 
+                          value={structure.projectComponent || ""} 
+                          onChange={e => {
+                            const updatedStructures = structures.map(s => 
+                              s.id === structure.id ? {...s, projectComponent: e.target.value} : s
+                            );
+                            setStructures(updatedStructures);
+                            onChange({ ...data, structures: updatedStructures });
+                          }} 
+                        />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label">Structure No.:</label>
+                        <input 
+                          type="text" 
+                          className="form-control form-control-sm" 
+                          value={structure.structureNo || ""} 
+                          onChange={e => {
+                            const updatedStructures = structures.map(s => 
+                              s.id === structure.id ? {...s, structureNo: e.target.value} : s
+                            );
+                            setStructures(updatedStructures);
+                            onChange({ ...data, structures: updatedStructures });
+                          }} 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center p-3 border rounded bg-light">
+                <p className="mb-0 text-muted">No structures added. Click "Add New Structure" to begin.</p>
+              </div>
+            )}
           </div>
         </div>
         
-        {/* Sixth row - Structure No. */}
-        <div className="row mb-2">
-          <div className="col-md-4 mb-2">
-            <label className="form-label">Structure No.:</label>
-            <input type="text" className="form-control form-control-sm" value={data.structureNo || ""} onChange={e => onChange({ ...data, structureNo: e.target.value })} />
-          </div>
+        {/* Keep legacy fields for backward compatibility if needed */}
+        <div className="d-none">
+          <input type="hidden" value={data.projectComponent || ""} />
+          <input type="hidden" value={data.structureNo || ""} />
         </div>
         
         {/* Navigation buttons */}

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 
-function SampleInfo({ data, onChange, onAddSample, onDeleteSample, index = 0 }) {
+function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSample, index = 0 }) {
   const [samples, setSamples] = useState(data?.samples || [{
     id: Date.now().toString(),
     sampleId: '',
@@ -87,12 +87,18 @@ function SampleInfo({ data, onChange, onAddSample, onDeleteSample, index = 0 }) 
               </div>
               <div className="col-md-6">
                 <label className="form-label">Borehole ID:</label>
-                <input 
-                  type="text" 
-                  className="form-control form-control-sm" 
-                  value={sample.boreholeId || ''} 
+                <select
+                  className="form-select form-select-sm"
+                  value={sample.boreholeId || ''}
                   onChange={(e) => handleSampleChange(sample.id, 'boreholeId', e.target.value)}
-                />
+                >
+                  <option value="">-- Select Borehole --</option>
+                  {boreholes.map(borehole => (
+                    <option key={borehole.id} value={borehole.boreholeId}>
+                      Borehole: {borehole.boreholeId || 'Unnamed'}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             

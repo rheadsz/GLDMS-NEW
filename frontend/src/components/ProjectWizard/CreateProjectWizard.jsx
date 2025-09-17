@@ -101,28 +101,37 @@ function CreateProjectWizard({ userName, userEmail, userPhone, supervisors = [],
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setSubmitError(null);
+    setSubmitError('');
     setSubmitSuccess(false);
-    
+
     try {
-      // Send the form data to the backend
-      const response = await axios.post('/api/project-wizard/wizard', {
+      // Create a copy of the form data with properly structured boreholes
+      const submitData = {
         ...formData,
-        comments,
-        userName: userName // Include the current user's name
-      });
+        // Ensure boreholes are passed correctly
+        Boreholes: formData.Boreholes || {},
+        // Add the userName to be stored as CreatedBy
+        userName: userName
+      };
+
+      console.log('About to submit data:', submitData);
       
-      console.log('Project submitted successfully:', response.data);
+      // Submit form data to backend
+      const response = await axios.post('/api/projects/wizard', submitData);
+      console.log('Form submitted successfully', response.data);
       setSubmitSuccess(true);
       
-      // Show success message
-      alert(`Project created successfully! Project ID: ${response.data.projectId}`);
-      
-      // Redirect to home page
-      navigate('/');
+      // Navigate back to dashboard
+      setTimeout(() => {
+        navigate('/');
+      }, 1500);
     } catch (error) {
-      console.error('Error submitting project:', error);
-      setSubmitError(error.response?.data?.message || 'An error occurred while submitting the project');
+      console.error('Error submitting form:', error);
+      setSubmitError(
+        error.response?.data?.message || 
+        error.message || 
+        'An error occurred while submitting your request.'
+      );
       alert(`Error: ${error.response?.data?.message || 'Failed to submit project'}`);
     } finally {
       setIsSubmitting(false);
@@ -154,7 +163,7 @@ function CreateProjectWizard({ userName, userEmail, userPhone, supervisors = [],
         {activeSection === 1 && (
           <>
             <Boreholes
-              data={formData.Boreholes}
+              data={formData} /* Pass the complete formData so Boreholes can access structures from ProjectInfo */
               onChange={data => handleSectionDataChange("Boreholes", data)}
             />
           </>
@@ -165,6 +174,7 @@ function CreateProjectWizard({ userName, userEmail, userPhone, supervisors = [],
               <SampleInfo
                 key={index}
                 data={sampleInfoSet}
+                boreholes={formData.Boreholes?.boreholes || []}
                 onChange={data => {
                   // Check if the data contains navigation flags
                   if (data._nextStep || data._prevStep) {
@@ -201,7 +211,7 @@ function CreateProjectWizard({ userName, userEmail, userPhone, supervisors = [],
             <TestsInfo
               data={{
                 ...formData.TestsInfo,
-                structures: formData.Boreholes.structures,
+                structures: formData.ProjectInfo.structures || [],
                 samples: formData.SampleInfoSets.flatMap(set => set.samples || [])
               }}
               onChange={data => {

@@ -44,18 +44,18 @@ app.use("/api/supervisor", supervisorRoutes);
 const staffRequestsRoutes = require("./routes/staffrequests")(db);
 app.use("/api/requests", staffRequestsRoutes);
 
+// Projects wizard must be registered BEFORE the general projects routes
+// to ensure /api/projects/wizard is matched first
+const projectsWizardRoutes = require("./routes/projects_wizard")(db);
+app.use("/api/projects", projectsWizardRoutes);
+
+// General projects routes (will not match /wizard due to router matching order)
 const projectsRoutes = require("./routes/projects")(db);
 app.use("/api/projects", projectsRoutes);
-
-
 
 // User projects route
 const userProjectsRoutes = require("./routes/user-projects")(db);
 app.use("/api/user-projects", userProjectsRoutes);
-
-// Projects wizard
-const projectsWizardRoutes = require("./routes/projects_wizard")(db);
-app.use("/api/project-wizard", projectsWizardRoutes);
 
 // Vision DB (no db injection in your original code)
 const visiondbRoutes = require("./routes/visiondb");

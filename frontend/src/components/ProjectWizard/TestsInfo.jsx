@@ -28,7 +28,7 @@ function TestsInfo({ data, onChange }) {
   // Initialize test rows with structure and boreholeSample values if there's only one of each
   const initialTestRows = data?.testRows || [{
     id: Date.now().toString(),
-    structure: hasSingleStructure ? (structures[0]?.structureId || '') : '',
+    structure: hasSingleStructure ? (structures[0]?.id || '') : '',
     boreholeSample: hasSingleBoreholeSample ? (boreholeSampleOptions[0] || '') : '',
     tests: []
   }];
@@ -64,7 +64,7 @@ function TestsInfo({ data, onChange }) {
     const newRow = {
       id: Date.now().toString(),
       // If there's only one structure, automatically set the structure value
-      structure: hasSingleStructure ? (structures[0]?.structureId || '') : '',
+      structure: hasSingleStructure ? (structures[0]?.id || '') : '',
       // If there's only one borehole-sample, automatically set the boreholeSample value
       boreholeSample: hasSingleBoreholeSample ? (boreholeSampleOptions[0] || '') : '',
       tests: []
@@ -170,11 +170,15 @@ function TestsInfo({ data, onChange }) {
                 <tr key={row.id}>
                   <td>
                     {hasSingleStructure ? (
-                      // If there's only one structure, show a text input with that structure ID
+                      // If there's only one structure, show a text input with structure info
                       <input 
                         type="text" 
                         className="form-control form-control-sm" 
-                        value={structures[0]?.structureId || ''}
+                        value={
+                          structures[0] ? (
+                            `${structures[0].projectComponent || ''} ${structures[0].structureNo ? '- ' + structures[0].structureNo : ''}`
+                          ) : ''
+                        }
                         readOnly
                       />
                     ) : (
@@ -186,7 +190,12 @@ function TestsInfo({ data, onChange }) {
                       >
                         <option value="">Select Structure</option>
                         {structures.map((structure) => (
-                          <option key={structure.id} value={structure.structureId}>{structure.structureId}</option>
+                          <option key={structure.id} value={structure.id}>
+                            {structure.projectComponent ? structure.projectComponent : ''}
+                            {structure.projectComponent && structure.structureNo ? ' - ' : ''}
+                            {structure.structureNo ? structure.structureNo : ''}
+                            {!structure.projectComponent && !structure.structureNo ? (structure.id || 'Unknown Structure') : ''}
+                          </option>
                         ))}
                       </select>
                     )}

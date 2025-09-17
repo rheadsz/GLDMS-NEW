@@ -8,228 +8,577 @@ const router = express.Router();
  */
 module.exports = (db) => {
   // Submit complete project wizard data
-  router.post('/wizard', async (req, res) => {
-    try {
-      const {
-        ProjectInfo,
-        Boreholes,
-        SampleInfoSets,
-        TestsInfo
-      } = req.body;
+  router.post('/wizard', (req, res) => {
+    // Extract data with validation
+    const ProjectInfo = req.body.ProjectInfo || {};
+    const Boreholes = req.body.Boreholes || {};
+    const SampleInfoSets = req.body.SampleInfoSets || [];
+    const TestsInfo = req.body.TestsInfo || {};
+    
+    // Define userName at the top level so it's accessible to all functions
+    const userName = req.body.userName || 'System';
+    console.log('User submitting the project:', userName);
+    
+    console.log('Received project wizard submission:', JSON.stringify(req.body, null, 2));
+    
+    // Basic validation
+    if (!ProjectInfo || typeof ProjectInfo !== 'object') {
+      return res.status(400).json({
+        message: 'Invalid project information provided',
+        detail: 'ProjectInfo must be a valid object'
+      });
+    }
+    
+    // Initialize variables to store IDs across promise chain
+    let projectId, requestId;
 
-      // Start a transaction
-      db.beginTransaction(async (err) => {
-        if (err) {
-          console.error('Error starting transaction:', err);
-          return res.status(500).json({ message: 'Error starting database transaction' });
-        }
-
-        try {
-          // 1. Insert project information
-          const projectResult = await new Promise((resolve, reject) => {
-            const projectQuery = `
-              INSERT INTO project (
-                ProjectName, EA, District, County, Route, 
-                PMFrom, PMTo, StructureNumber, CreatedBy, EfisProjectId
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `;
-            
-            db.query(
-              projectQuery,
-              [
-                ProjectInfo.projectName || '',
-                ProjectInfo.ea || '',
-                ProjectInfo.district || '',
-                ProjectInfo.county || '',
-                ProjectInfo.route || '',
-                ProjectInfo.pmStart || '',
-                ProjectInfo.pmEnd || '',
-                ProjectInfo.structureNo || '',
-                req.body.userName || 'System',
-                ProjectInfo.projectID || ProjectInfo.efisProjectId || ProjectInfo.efisId || ''
-              ],
-              (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-              }
-            );
-          });
-
-          const projectId = projectResult.insertId;
-          console.log(`Project created with ID: ${projectId}`);
+    // Start a transaction
+    db.beginTransaction((err) => {
+      if (err) {
+        console.error('Error starting transaction:', err);
+        return res.status(500).json({ message: 'Error starting database transaction' });
+      }
+      
+      console.log('Transaction started');
+      
+      // Use promise chain to handle transaction steps
+      insertProject()
+        .then((ids) => {
+          projectId = ids.projectId;
+          requestId = ids.requestId;
+          console.log(`Project created with ID: ${projectId}, Request ID: ${requestId}`);
+          return insertStructures(projectId, requestId);
+        })
+        .then(() => {
+          console.log('Structures inserted successfully');
+          return insertBoreholes(projectId, requestId);
+        })
+        .then(() => {
+          console.log('Boreholes inserted successfully');
+          return insertSamples(projectId, requestId);
+        })
+        .then(() => {
+          console.log('Samples inserted successfully');
+          return insertTests(projectId, requestId);
+        })
+        .then(() => {
+          console.log('Tests inserted successfully');
+          return commitTransaction();
+        })
+        .catch(handleError);
+      
+      // 1. Insert project information
+      function insertProject() {
+        return new Promise((resolve, reject) => {
+          // Additional validation for project fields with detailed logging
+          console.log('ProjectInfo in insertProject:', ProjectInfo);
           
-          // 2. Create a record in the project_requests table
-          const requestResult = await new Promise((resolve, reject) => {
-            const requestQuery = `
-              INSERT INTO project_requests (
-                ProjectID, RequestingUser, Status, Notes
-              ) VALUES (?, ?, ?, ?)
-            `;
-            
-            db.query(
-              requestQuery,
-              [
-                projectId,
-                req.body.userName || 'System',
-                'Submitted',
-                'Initial project submission'
-              ],
-              (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
+          // Prepare safe values with fallbacks for all fields
+          const projectName = ProjectInfo.projectName || '';
+          const ea = ProjectInfo.ea || '';
+          const district = ProjectInfo.district || '';
+          const county = ProjectInfo.county || '';
+          // Convert route to NULL if empty (it's a numeric field)
+          const route = ProjectInfo.route && ProjectInfo.route !== '' ? parseInt(ProjectInfo.route, 10) : null;
+          const pmFrom = ProjectInfo.pmFrom || '';
+          const pmTo = ProjectInfo.pmTo || '';
+          const structureNo = ProjectInfo.structureNo || '';
+          // Set efisProjectId from projectID field or as a fallback use efisProjectId
+          const efisProjectId = ProjectInfo.projectID || ProjectInfo.efisProjectId || '';
+          
+          const projectQuery = `
+            INSERT INTO project (
+              ProjectName, EA, District, County, Route, 
+              PMFrom, PMTo, StructureNumber, CreatedBy, EfisProjectId
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `;
+          
+          const params = [
+            projectName,
+            ea,
+            district,
+            county,
+            route,
+            pmFrom,
+            pmTo,
+            structureNo,
+            userName,
+            efisProjectId
+          ];
+          
+          console.log('Project insert parameters:', params);
+          
+          db.query(
+            projectQuery,
+            params,
+            (err, result) => {
+              if (err) {
+                console.error('Error inserting project:', err);
+                return reject(err);
               }
-            );
+              
+              const projectId = result.insertId;
+              console.log(`Project created with ID: ${projectId}`);
+              
+              // Create a new request
+              const requestQuery = `
+                INSERT INTO project_requests (ProjectID, Status, RequestingUser)
+                VALUES (?, 'Submitted', ?)
+              `;
+              
+              db.query(
+                requestQuery,
+                [projectId, userName], // Use the already defined userName variable
+                (err, requestResult) => {
+                  if (err) {
+                    console.error('Error creating request:', err);
+                    return reject(err);
+                  }
+                  
+                  const requestId = requestResult.insertId;
+                  console.log(`Request created with ID: ${requestId}`);
+                  resolve({ projectId, requestId });
+                }
+              );
+            }
+          );
+        });
+      }
+      
+      // 2. Insert structures
+      function insertStructures(projectId, requestId) {
+        return new Promise((resolve, reject) => {
+          // Skip if no structures
+          if (!ProjectInfo.structures || ProjectInfo.structures.length === 0) {
+            console.log('No structures to insert');
+            return resolve();
+          }
+          
+          console.log('Processing project structures:', ProjectInfo.structures);
+          
+          // Create an array of promises for inserting all structures
+          const structurePromises = ProjectInfo.structures.map(structure => {
+            return new Promise((resolveStructure, rejectStructure) => {
+              const structureQuery = `
+                INSERT INTO project_structures (
+                  ProjectID, StructureNumber, CreatedBy, RequestID, ProjectComponent
+                ) VALUES (?, ?, ?, ?, ?)
+              `;
+              
+              db.query(
+                structureQuery,
+                [
+                  projectId,
+                  structure.structureNo || '',
+                  userName,
+                  requestId,
+                  structure.projectComponent || ''
+                ],
+                (err, result) => {
+                  if (err) {
+                    console.error('Error inserting structure:', err);
+                    rejectStructure(err);
+                  } else {
+                    console.log(`Structure created with ID: ${result.insertId}`);
+                    resolveStructure(result);
+                  }
+                }
+              );
+            });
           });
           
-          const requestId = requestResult.insertId;
-          console.log(`Request created with ID: ${requestId}`);
-
-          // 2. Insert structures
-          if (Boreholes && Boreholes.structures && Boreholes.structures.length > 0) {
-            for (const structure of Boreholes.structures) {
-              // Insert structure
-              const structureResult = await new Promise((resolve, reject) => {
-                const structureQuery = `
-                  INSERT INTO project_structures (
-                    ProjectID, StructureNumber, CreatedBy, RequestID
-                  ) VALUES (?, ?, ?, ?)
-                `;
-                
-                db.query(
-                  structureQuery,
-                  [
-                    projectId,
-                    structure.structureId || '',
-                    req.body.userName || 'System',
+          // Wait for all structure insertions to complete
+          Promise.all(structurePromises)
+            .then(() => resolve())
+            .catch(err => reject(err));
+        });
+      }
+      
+      // 3. Insert boreholes
+      function insertBoreholes(projectId, requestId) {
+        return new Promise((resolve, reject) => {
+          // Skip if no boreholes
+          if (!Boreholes || !Boreholes.boreholes || Boreholes.boreholes.length === 0) {
+            console.log('No boreholes to insert');
+            return resolve();
+          }
+          
+          console.log('Processing boreholes:', JSON.stringify(Boreholes.boreholes));
+          
+          // Create an array of promises for inserting all boreholes
+          const boreholePromises = Boreholes.boreholes.map(borehole => {
+            return new Promise((resolveBorehole, rejectBorehole) => {
+              // Find the structure ID for this borehole
+              findStructureId(borehole, projectId)
+                .then(structureId => {
+                  if (!structureId) {
+                    console.warn(`No valid structure found for borehole ${borehole.boreholeId}`);
+                    return resolveBorehole(); // Skip this borehole but don't fail the whole operation
+                  }
+                  
+                  console.log(`Inserting borehole with structure ID: ${structureId}`);
+                  
+                  const boreholeQuery = `
+                    INSERT INTO project_boreholes (
+                      StructureID, BoreholeNumber, Latitude, Longitude,
+                      Northing, Easting, GroundSurfaceElevation, CreatedBy, RequestID
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  `;
+                  
+                  const params = [
+                    structureId,
+                    borehole.boreholeId || '',
+                    borehole.latitude || null,
+                    borehole.longitude || null,
+                    borehole.northing || null,
+                    borehole.easting || null,
+                    borehole.groundSurfaceElevation || null,
+                    userName, // Use the already defined userName variable
                     requestId
-                  ],
-                  (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
+                  ];
+                  
+                  db.query(boreholeQuery, params, (err, result) => {
+                    if (err) {
+                      console.error('Error inserting borehole:', err);
+                      rejectBorehole(err);
+                    } else {
+                      console.log(`Borehole created with ID: ${result.insertId}`);
+                      resolveBorehole(result);
+                    }
+                  });
+                })
+                .catch(err => rejectBorehole(err));
+            });
+          });
+          
+          // Wait for all borehole insertions to complete
+          Promise.all(boreholePromises)
+            .then(() => resolve())
+            .catch(err => reject(err));
+        });
+      }
+      
+      // Helper function to find structure ID
+      function findStructureId(borehole, projectId) {
+        return new Promise((resolve, reject) => {
+          // First try to find by matching structure ID from ProjectInfo
+          if (borehole.structureId && ProjectInfo.structures) {
+            const matchingStructure = ProjectInfo.structures.find(s => s.id === borehole.structureId);
+            if (matchingStructure) {
+              const findStructureQuery = `
+                SELECT StructureID FROM project_structures 
+                WHERE ProjectID = ? AND ProjectComponent = ? AND StructureNumber = ?
+              `;
+              
+              db.query(
+                findStructureQuery,
+                [
+                  projectId,
+                  matchingStructure.projectComponent || '',
+                  matchingStructure.structureNo || ''
+                ],
+                (err, result) => {
+                  if (err) {
+                    console.error('Error finding structure:', err);
+                    reject(err);
+                  } else if (result && result.length > 0) {
+                    resolve(result[0].StructureID);
+                  } else {
+                    // Fall back to any structure for this project
+                    findAnyStructure();
                   }
-                );
+                }
+              );
+              return;
+            }
+          }
+          
+          // Fall back to any structure for this project
+          findAnyStructure();
+          
+          function findAnyStructure() {
+            db.query(
+              'SELECT StructureID FROM project_structures WHERE ProjectID = ? LIMIT 1',
+              [projectId],
+              (err, result) => {
+                if (err) {
+                  console.error('Error finding any structure:', err);
+                  reject(err);
+                } else if (result && result.length > 0) {
+                  console.log(`Using fallback structure ID: ${result[0].StructureID}`);
+                  resolve(result[0].StructureID);
+                } else {
+                  console.warn('No structures found at all');
+                  resolve(null);
+                }
+              }
+            );
+          }
+        });
+      }
+      
+      // 4. Insert samples
+      function insertSamples(projectId, requestId) {
+        return new Promise((resolve, reject) => {
+          // Skip if no samples
+          if (!SampleInfoSets || !SampleInfoSets.length) {
+            console.log('No sample sets to insert');
+            return resolve();
+          }
+          
+          console.log('Processing sample info sets:', JSON.stringify(SampleInfoSets));
+          
+          // Process each sample set
+          const sampleSetPromises = SampleInfoSets.map(sampleSet => {
+            return new Promise((resolveSampleSet, rejectSampleSet) => {
+              // Skip if no samples in this set
+              if (!sampleSet.samples || !sampleSet.samples.length) {
+                return resolveSampleSet();
+              }
+              
+              // Process each sample in the set
+              const samplePromises = sampleSet.samples.map(sample => {
+                return new Promise((resolveSample, rejectSample) => {
+                  // Skip if no borehole ID
+                  if (!sample.boreholeId) {
+                    console.warn('Sample missing boreholeId, skipping');
+                    return resolveSample();
+                  }
+                  
+                  // Find the borehole in the database
+                  const boreholeQuery = `
+                    SELECT b.BoreholeID 
+                    FROM project_boreholes b
+                    JOIN project_structures s ON b.StructureID = s.StructureID
+                    WHERE s.ProjectID = ? AND b.BoreholeNumber = ?
+                  `;
+                  
+                  db.query(
+                    boreholeQuery,
+                    [projectId, sample.boreholeId || ''],
+                    (err, boreholeResult) => {
+                      if (err) {
+                        console.error('Error finding borehole:', err);
+                        return rejectSample(err);
+                      }
+                      
+                      let boreholeId;
+                      
+                      if (boreholeResult.length === 0) {
+                        console.warn(`Borehole not found for sample: ${sample.sampleId}`);
+                        
+                        // Try to get any borehole as fallback
+                        db.query(
+                          'SELECT b.BoreholeID FROM project_boreholes b JOIN project_structures s ON b.StructureID = s.StructureID WHERE s.ProjectID = ? LIMIT 1',
+                          [projectId],
+                          (err, anyBoreholeResult) => {
+                            if (err) {
+                              console.error('Error finding any borehole:', err);
+                              return rejectSample(err);
+                            }
+                            
+                            if (anyBoreholeResult.length === 0) {
+                              console.warn('No boreholes found at all, skipping sample');
+                              return resolveSample();
+                            }
+                            
+                            boreholeId = anyBoreholeResult[0].BoreholeID;
+                            insertSampleRecord(boreholeId);
+                          }
+                        );
+                      } else {
+                        boreholeId = boreholeResult[0].BoreholeID;
+                        insertSampleRecord(boreholeId);
+                      }
+                      
+                      function insertSampleRecord(boreholeId) {
+                        // Check if samples table exists first
+                        db.query(
+                          "SHOW TABLES LIKE 'project_samples'",
+                          (err, tableResult) => {
+                            if (err) {
+                              console.error('Error checking for project_samples table:', err);
+                              return rejectSample(err);
+                            }
+                            
+                            if (tableResult.length === 0) {
+                              console.error('project_samples table does not exist!');
+                              return rejectSample(new Error('project_samples table missing'));
+                            }
+                            
+                            // Insert the sample
+                            const sampleQuery = `
+                              INSERT INTO project_samples (
+                                BoreholeID, SampleNumber, DepthFrom, DepthTo,
+                                TL101Number, ContainerType, Quantity, FieldCollectionDate, CreatedBy, RequestID
+                              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            `;
+                            
+                            const sampleParams = [
+                              boreholeId,
+                              sample.sampleId || '',
+                              sample.depthFrom || null,
+                              sample.depthTo || null,
+                              sample.tl101No || null,
+                              sample.containerType || 'Tube',
+                              sample.quantity || null,
+                              sample.fieldCollectionDate || null,
+                              userName, // Use the already defined userName variable
+                              requestId
+                            ];
+                            
+                            db.query(sampleQuery, sampleParams, (err, sampleResult) => {
+                              if (err) {
+                                console.error('Error inserting sample:', err);
+                                rejectSample(err);
+                              } else {
+                                console.log(`Sample created with ID: ${sampleResult.insertId}`);
+                                resolveSample(sampleResult);
+                              }
+                            });
+                          }
+                        );
+                      }
+                    }
+                  );
+                });
               });
-
-              const structureId = structureResult.insertId;
-              console.log(`Structure created with ID: ${structureId}`);
-
-              // Insert boreholes for this structure
-              if (structure.boreholes && structure.boreholes.length > 0) {
-                for (const borehole of structure.boreholes) {
-                  const boreholeResult = await new Promise((resolve, reject) => {
-                    const boreholeQuery = `
-                      INSERT INTO project_boreholes (
-                        StructureID, BoreholeNumber, Latitude, Longitude,
-                        Northing, Easting, GroundSurfaceElevation, CreatedBy, RequestID
-                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    `;
-                    
-                    db.query(
-                      boreholeQuery,
-                      [
-                        structureId,
-                        borehole.boreholeId || '',
-                        borehole.latitude || null,
-                        borehole.longitude || null,
-                        borehole.northing || null,
-                        borehole.easting || null,
-                        borehole.groundSurfaceElevation || null,
-                        req.body.userName || 'System',
-                        requestId
-                      ],
-                      (err, result) => {
-                        if (err) reject(err);
-                        else resolve(result);
-                      }
-                    );
-                  });
-
-                  const boreholeId = boreholeResult.insertId;
-                  console.log(`Borehole created with ID: ${boreholeId}`);
+              
+              // Wait for all samples in this set to be processed
+              Promise.all(samplePromises)
+                .then(() => resolveSampleSet())
+                .catch(err => rejectSampleSet(err));
+            });
+          });
+          
+          // Wait for all sample sets to be processed
+          Promise.all(sampleSetPromises)
+            .then(() => resolve())
+            .catch(err => reject(err));
+        });
+      }
+      
+      // 5. Insert tests
+      function insertTests(projectId, requestId) {
+        return new Promise((resolve, reject) => {
+          // Skip if no tests
+          if (!TestsInfo || !TestsInfo.testRows || !TestsInfo.testRows.length) {
+            console.log('No tests to insert');
+            return resolve();
+          }
+          
+          console.log('Processing test rows:', JSON.stringify(TestsInfo.testRows));
+          
+          // Process each test row
+          const testRowPromises = TestsInfo.testRows.map(testRow => {
+            return new Promise((resolveTestRow, rejectTestRow) => {
+              // Skip if no borehole-sample info
+              if (!testRow.boreholeSample) {
+                console.warn('Missing borehole-sample information for test row');
+                return resolveTestRow();
+              }
+              
+              // Extract borehole ID from the formatted string
+              let boreholeId = testRow.boreholeSample;
+              console.log('Raw boreholeSample value:', boreholeId);
+              
+              // Handle different potential formats of the borehole ID
+              if (typeof boreholeId === 'string') {
+                if (boreholeId.includes('Borehole:')) {
+                  boreholeId = boreholeId.replace('Borehole:', '').trim();
+                } else if (boreholeId.includes(' - ')) {
+                  // Handle 'BH1 - 0-1' format by getting just the borehole part
+                  boreholeId = boreholeId.split(' - ')[0].trim();
                 }
               }
-            }
-          }
-
-          // 3. Insert samples
-          if (SampleInfoSets && SampleInfoSets.length > 0) {
-            for (const sampleSet of SampleInfoSets) {
-              if (sampleSet.samples && sampleSet.samples.length > 0) {
-                for (const sample of sampleSet.samples) {
-                  // Find the borehole ID based on borehole number
-                  const boreholeResult = await new Promise((resolve, reject) => {
-                    const boreholeQuery = `
-                      SELECT b.BoreholeID 
-                      FROM project_boreholes b
-                      JOIN project_structures s ON b.StructureID = s.StructureID
-                      WHERE s.ProjectID = ? AND b.BoreholeNumber = ?
-                    `;
-                    
-                    db.query(
-                      boreholeQuery,
-                      [projectId, sample.boreholeId || ''],
-                      (err, result) => {
-                        if (err) reject(err);
-                        else resolve(result);
-                      }
-                    );
-                  });
-
-                  if (boreholeResult.length === 0) {
-                    console.warn(`Borehole not found for sample: ${sample.sampleId}`);
-                    continue;
+              
+              console.log('Extracted borehole ID for lookup:', boreholeId);
+              
+              // First try to create any missing samples if necessary
+              ensureSampleExists(boreholeId)
+                .then(sampleId => {
+                  if (sampleId) {
+                    processSampleTests(sampleId);
+                  } else {
+                    // Fall back to the standard lookup
+                    findExistingSample(boreholeId);
                   }
-
-                  const boreholeId = boreholeResult[0].BoreholeID;
-
-                  // Insert sample
-                  const sampleResult = await new Promise((resolve, reject) => {
-                    const sampleQuery = `
-                      INSERT INTO project_samples (
-                        BoreholeID, SampleNumber, DepthFrom, DepthTo,
-                        TL101Number, ContainerType, Quantity, FieldCollectionDate, CreatedBy, RequestID
-                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    `;
-                    
-                    db.query(
-                      sampleQuery,
-                      [
-                        boreholeId,
-                        sample.sampleId || '',
-                        sample.depthFrom || null,
-                        sample.depthTo || null,
-                        sample.tl101No || null,
-                        sample.containerType || 'Tube',
-                        sample.quantity || null,
-                        sample.fieldCollectionDate || null,
-                        req.body.userName || 'System',
-                        requestId
-                      ],
-                      (err, result) => {
-                        if (err) reject(err);
-                        else resolve(result);
+                })
+                .catch(err => {
+                  console.error('Error ensuring sample exists:', err);
+                  findExistingSample(boreholeId);
+                });
+              
+              // Create a sample on the fly if it doesn't exist
+              function ensureSampleExists(boreholeNum) {
+                return new Promise((resolve, reject) => {
+                  // First check if any boreholes exist with this number
+                  db.query(
+                    'SELECT BoreholeID FROM project_boreholes WHERE BoreholeNumber = ?',
+                    [boreholeNum],
+                    (err, boreholeResult) => {
+                      if (err) {
+                        console.error('Error finding borehole for sample creation:', err);
+                        return resolve(null);
                       }
-                    );
-                  });
-
-                  const sampleId = sampleResult.insertId;
-                  console.log(`Sample created with ID: ${sampleId}`);
-                }
+                      
+                      if (boreholeResult.length === 0) {
+                        console.warn(`No borehole found with ID ${boreholeNum} for sample creation`);
+                        return resolve(null);
+                      }
+                      
+                      const bhId = boreholeResult[0].BoreholeID;
+                      
+                      // Check if any samples exist for this borehole
+                      db.query(
+                        'SELECT SampleID FROM project_samples WHERE BoreholeID = ? LIMIT 1',
+                        [bhId],
+                        (err, sampleResult) => {
+                          if (err) {
+                            console.error('Error checking for existing samples:', err);
+                            return resolve(null);
+                          }
+                          
+                          if (sampleResult.length > 0) {
+                            // Sample exists, return its ID
+                            console.log(`Found existing sample ID ${sampleResult[0].SampleID} for borehole ${boreholeNum}`);
+                            return resolve(sampleResult[0].SampleID);
+                          }
+                          
+                          // Create a new sample
+                          const newSample = {
+                            BoreholeID: bhId,
+                            SampleNumber: '1', // Default sample number
+                            DepthFrom: 0,
+                            DepthTo: 1,
+                            ContainerType: 'Tube',
+                            CreatedBy: userName, // Use the already defined userName variable
+                            RequestID: requestId
+                          };
+                          
+                          db.query(
+                            'INSERT INTO project_samples (BoreholeID, SampleNumber, DepthFrom, DepthTo, ContainerType, CreatedBy, RequestID) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                            [newSample.BoreholeID, newSample.SampleNumber, newSample.DepthFrom, newSample.DepthTo, newSample.ContainerType, newSample.CreatedBy, newSample.RequestID],
+                            (err, insertResult) => {
+                              if (err) {
+                                console.error('Error creating sample:', err);
+                                return resolve(null);
+                              }
+                              
+                              console.log(`Created new sample with ID ${insertResult.insertId} for borehole ${boreholeNum}`);
+                              resolve(insertResult.insertId);
+                            }
+                          );
+                        }
+                      );
+                    }
+                  );
+                });
               }
-            }
-          }
-
-          // 4. Insert tests
-          if (TestsInfo && TestsInfo.testRows && TestsInfo.testRows.length > 0) {
-            for (const testRow of TestsInfo.testRows) {
-              // Parse the borehole-sample string to get borehole ID and depth
-              const boreholeSampleParts = (testRow.boreholeSample || '').split(' - ');
-              if (boreholeSampleParts.length < 2) continue;
               
-              const boreholeId = boreholeSampleParts[0];
-              
-              // Find the sample ID based on borehole ID and depth
-              const sampleResult = await new Promise((resolve, reject) => {
+              // Standard lookup for existing samples
+              function findExistingSample(boreholeNum) {
+                // Find the sample ID
                 const sampleQuery = `
                   SELECT s.SampleID 
                   FROM project_samples s
@@ -237,28 +586,42 @@ module.exports = (db) => {
                   WHERE b.BoreholeNumber = ?
                 `;
                 
+                console.log('Looking for samples with borehole number:', boreholeNum);
+                
                 db.query(
                   sampleQuery,
-                  [boreholeId],
-                  (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
+                  [boreholeNum],
+                  (err, sampleResult) => {
+                    if (err) {
+                      console.error('Error finding sample:', err);
+                      return rejectTestRow(err);
+                    }
+                    
+                    if (sampleResult.length === 0) {
+                      console.warn(`Sample not found for borehole: ${boreholeNum}`);
+                      return resolveTestRow(); // Skip this test row
+                    }
+                    
+                    const sampleId = sampleResult[0].SampleID;
+                    console.log(`Found sample ID ${sampleId} for borehole ${boreholeNum}`);
+                    processSampleTests(sampleId);
                   }
                 );
-              });
-
-              if (sampleResult.length === 0) {
-                console.warn(`Sample not found for test: ${testRow.boreholeSample}`);
-                continue;
               }
-
-              const sampleId = sampleResult[0].SampleID;
-
-              // Insert tests for this sample
-              if (testRow.tests && testRow.tests.length > 0) {
-                for (const testName of testRow.tests) {
-                  // Find the test type ID based on test name
-                  const testTypeResult = await new Promise((resolve, reject) => {
+              
+              // Process tests for a sample
+              function processSampleTests(sampleId) {
+                // Skip if no tests selected
+                if (!testRow.tests || !testRow.tests.length) {
+                  return resolveTestRow();
+                }
+                
+                console.log(`Processing ${testRow.tests.length} tests for sample ID ${sampleId}`);
+                
+                // Process each test in the row
+                const testPromises = testRow.tests.map(testName => {
+                  return new Promise((resolveTest, rejectTest) => {
+                    // Find the test type ID
                     const testTypeQuery = `
                       SELECT TestTypeID FROM test_type WHERE TestName = ?
                     `;
@@ -266,78 +629,101 @@ module.exports = (db) => {
                     db.query(
                       testTypeQuery,
                       [testName],
-                      (err, result) => {
-                        if (err) reject(err);
-                        else resolve(result);
+                      (err, testTypeResult) => {
+                        if (err) {
+                          console.error('Error finding test type:', err);
+                          return rejectTest(err);
+                        }
+                        
+                        if (testTypeResult.length === 0) {
+                          console.warn(`Test type not found: ${testName}`);
+                          return resolveTest();
+                        }
+                        
+                        const testTypeId = testTypeResult[0].TestTypeID;
+                        console.log(`Found test type ID ${testTypeId} for test ${testName}`);
+                        
+                        // Insert the test
+                        const testQuery = `
+                          INSERT INTO project_tests (
+                            SampleID, TestTypeID, Status, RequestingUser, RequestedDate, CreatedBy, RequestID
+                          ) VALUES (?, ?, ?, ?, CURDATE(), ?, ?)
+                        `;
+                        
+                        const testParams = [
+                          sampleId,
+                          testTypeId,
+                          'Requested',
+                          userName,  
+                          userName,  
+                          requestId
+                        ];
+                        
+                        console.log('Test insert parameters:', testParams);
+                        
+                        db.query(
+                          testQuery,
+                          testParams,
+                          (err, testResult) => {
+                            if (err) {
+                              console.error('Error inserting test:', err);
+                              rejectTest(err);
+                            } else {
+                              console.log(`Test created with ID: ${testResult.insertId}`);
+                              resolveTest(testResult);
+                            }
+                          }
+                        );
                       }
                     );
                   });
-
-                  if (testTypeResult.length === 0) {
-                    console.warn(`Test type not found: ${testName}`);
-                    continue;
-                  }
-
-                  const testTypeId = testTypeResult[0].TestTypeID;
-
-                  // Insert test
-                  const testResult = await new Promise((resolve, reject) => {
-                    const testQuery = `
-                      INSERT INTO project_tests (
-                        SampleID, TestTypeID, Status, RequestingUser, RequestedDate, CreatedBy, RequestID
-                      ) VALUES (?, ?, ?, ?, CURDATE(), ?, ?)
-                    `;
-                    
-                    db.query(
-                      testQuery,
-                      [
-                        sampleId,
-                        testTypeId,
-                        'Requested',
-                        req.body.userName || null,  // Store the requesting user's name
-                        req.body.userName || 'System',
-                        requestId
-                      ],
-                      (err, result) => {
-                        if (err) reject(err);
-                        else resolve(result);
-                      }
-                    );
-                  });
-
-                  const testId = testResult.insertId;
-                  console.log(`Test created with ID: ${testId}`);
-                }
+                });
+                
+                // Wait for all tests in this row to be processed
+                Promise.all(testPromises)
+                  .then(() => resolveTestRow())
+                  .catch(err => rejectTestRow(err));
               }
-            }
-          }
-
-          // Commit the transaction
-          db.commit((err) => {
-            if (err) {
-              console.error('Error committing transaction:', err);
-              return db.rollback(() => {
-                res.status(500).json({ message: 'Error committing transaction' });
-              });
-            }
-
-            res.status(201).json({ 
-              message: 'Project created successfully', 
-              projectId 
             });
           });
-        } catch (error) {
-          // Rollback the transaction in case of error
-          db.rollback(() => {
-            console.error('Error in transaction, rolled back:', error);
-            res.status(500).json({ message: 'Error creating project', error: error.message });
+          
+          // Wait for all test rows to be processed
+          Promise.all(testRowPromises)
+            .then(() => resolve())
+            .catch(err => reject(err));
+        });
+      }
+      
+      // Commit transaction
+      function commitTransaction() {
+        return new Promise((resolve, reject) => {
+          db.commit(err => {
+            if (err) {
+              console.error('Error committing transaction:', err);
+              db.rollback(() => {
+                reject(err);
+              });
+            } else {
+              console.log('Transaction committed successfully');
+              res.status(201).json({ 
+                message: 'Project created successfully', 
+                projectId 
+              });
+              resolve();
+            }
           });
-        }
-      });
-    } catch (error) {
-      console.error('Error creating project:', error);
-      res.status(500).json({ message: 'Server error', error: error.message });
-    }
+        });
+      }
+      
+      // Handle errors
+      function handleError(error) {
+        console.error('Error in transaction:', error);
+        db.rollback(() => {
+          console.error('Transaction rolled back due to error');
+          res.status(500).json({ message: 'Error creating project', error: error.message });
+        });
+      }
+    });
   });
 
   return router;

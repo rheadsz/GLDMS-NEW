@@ -114,6 +114,66 @@ const sendRequestNotifications = async (requestData, requestId, testDetails) => 
   }
 };
 
+/**
+ * Send email notification about sample submissions
+ * @param {Object} projectData - The project data
+ * @param {Array} samples - Array of sample details
+ * @returns {Promise} - Promise that resolves when email is sent
+ */
+const sendSampleSubmissionEmail = async (projectData, samples) => {
+  try {
+    // Format the samples data for email
+    let samplesHtml = '';
+    
+    samples.forEach((sample, index) => {
+      samplesHtml += `
+        <div style="margin-bottom: 15px; padding: 10px; background-color: #f5f5f5; border-left: 3px solid #007bff;">
+          <p><strong>Sample ${index + 1}:</strong></p>
+          <p><strong>Sample ID:</strong> ${sample.sampleId || 'N/A'}</p>
+          <p><strong>Borehole ID:</strong> ${sample.boreholeId || 'N/A'}</p>
+          <p><strong>Depth:</strong> ${sample.depthFrom || '0'} to ${sample.depthTo || '0'} ft</p>
+          <p><strong>Container Type:</strong> ${sample.containerType || 'N/A'}</p>
+          <p><strong>Quantity:</strong> ${sample.quantity || 'N/A'}</p>
+          ${sample.tl101No ? `<p><strong>TL-101 Number:</strong> ${sample.tl101No}</p>` : ''}
+          ${sample.fieldCollectionDate ? `<p><strong>Collection Date:</strong> ${sample.fieldCollectionDate}</p>` : ''}
+        </div>
+      `;
+    });
+
+    // Email options
+    const mailOptions = {
+      from: process.env.EMAIL_USER || 'your-email@gmail.com',
+      to: 'Rhea.Dsouza@dot.ca.gov',
+      subject: 'Samples submitted to GLDMS',
+      html: `
+        <h2>Please find the following samples submitted to GLDMS:</h2>
+        <div style="margin: 20px 0;">
+          <p><strong>Project ID:</strong> ${projectData.projectID || 'N/A'}</p>
+          <p><strong>EA:</strong> ${projectData.ea || 'N/A'}</p>
+          <p><strong>Project Name:</strong> ${projectData.projectName || 'N/A'}</p>
+          <p><strong>District:</strong> ${projectData.district || 'N/A'}</p>
+        </div>
+        <h3>Sample Details:</h3>
+        ${samplesHtml}
+        <p>This is an automated notification from the GLDMS system.</p>
+      `
+    };
+
+    // Send email
+    const result = await transporter.sendMail(mailOptions);
+
+    console.log('Sample submission email sent successfully:', result.messageId);
+
+    return {
+      messageId: result.messageId
+    };
+  } catch (error) {
+    console.error('Error sending sample submission email:', error);
+    throw error;
+  }
+};
+
 module.exports = {
-  sendRequestNotifications
+  sendRequestNotifications,
+  sendSampleSubmissionEmail
 };

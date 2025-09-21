@@ -10,7 +10,7 @@ const port = 3001;
 
 console.log("Starting server.js...");
 
-// Core middleware
+// ---------------- Core middleware ----------------
 app.use(cors());
 app.use(express.json());
 
@@ -20,7 +20,7 @@ app.use((req, _res, next) => {
   next();
 });
 
-// ---- MySQL Connection ----
+// ---------------- MySQL Connection ----------------
 const db = mysql.createConnection({
   host: "127.0.0.1",
   user: "root",
@@ -37,7 +37,8 @@ db.connect((err) => {
   console.log("Connected to database as id " + db.threadId);
 });
 
-// ---- Routes ----
+// ---------------- Routes ----------------
+// NOTE: These routers are functions that accept `db` and return an Express router.
 const supervisorRoutes = require("./routes/supervisor")(db);
 app.use("/api/supervisor", supervisorRoutes);
 
@@ -45,11 +46,10 @@ const staffRequestsRoutes = require("./routes/staffrequests")(db);
 app.use("/api/requests", staffRequestsRoutes);
 
 // Projects wizard must be registered BEFORE the general projects routes
-// to ensure /api/projects/wizard is matched first
 const projectsWizardRoutes = require("./routes/projects_wizard")(db);
 app.use("/api/projects", projectsWizardRoutes);
 
-// General projects routes (will not match /wizard due to router matching order)
+// General projects routes
 const projectsRoutes = require("./routes/projects")(db);
 app.use("/api/projects", projectsRoutes);
 
@@ -61,8 +61,11 @@ app.use("/api/user-projects", userProjectsRoutes);
 const visiondbRoutes = require("./routes/visiondb");
 app.use("/api/visiondb", visiondbRoutes);
 
+// ✅ Assignments router (now also includes /assignments/:requestId/summary)
+const assignmentsRouter = require("./routes/assignments")(db);
+app.use("/api", assignmentsRouter);
 
-// ---- Ad-hoc endpoints from your original file ----
+// ---------------- Ad-hoc endpoints ----------------
 app.get("/api/test-types", (req, res) => {
   const query = "SELECT * FROM test_type";
   db.query(query, (err, results) => {
@@ -133,7 +136,7 @@ app.post("/api/login", (req, res) => {
   });
 });
 
-// Simple health endpoint
+// ---------------- Health & 404 ----------------
 app.get("/health", (_req, res) => res.send("OK"));
 
 // 404 fallback (keep last)
@@ -142,7 +145,7 @@ app.use((req, res) => {
   res.status(404).send("Not Found");
 });
 
-// ---- Start server ----
+// ---------------- Start server ----------------
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
 });

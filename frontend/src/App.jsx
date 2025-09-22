@@ -12,6 +12,10 @@ import CreateProjectWizard from "./components/ProjectWizard/CreateProjectWizard"
 import ProjectsPage from "./pages/ProjectsPage";
 import SimpleProjectsTable from "./components/SimpleProjectsTable";
 
+// ✅ Tester dummy pages (route-level components living in components/)
+import TesterHome from "./components/TesterHome";
+import TesterAssignment from "./components/TesterAssignment";
+
 function SupervisorDashboard() {
   return (
     <div className="container py-4">
@@ -67,7 +71,13 @@ const tabs = [
   { label: "Dummy Tab", content: <DummyTab /> },
 ];
 
-function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole, userName, setUserName, userEmail, setUserEmail, userPhone, setUserPhone }) {
+function AppRoutes({
+  signedIn, setSignedIn,
+  userRole, setUserRole,
+  userName, setUserName,
+  userEmail, setUserEmail,
+  userPhone, setUserPhone
+}) {
   const [tab, setTab] = useState(0);
   const navigate = useNavigate();
 
@@ -78,22 +88,38 @@ function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole, userName, set
     setUserName(name);
     setUserEmail(email);
     setUserPhone(phone);
-    // Persist to localStorage
     localStorage.setItem('signedIn', 'true');
     localStorage.setItem('userRole', role);
     localStorage.setItem('userName', name);
     localStorage.setItem('userEmail', email);
     localStorage.setItem('userPhone', phone);
-    if (role === "supervisor") {
-      navigate("/supervisor");
-    } else {
-      navigate("/menu");
-    }
+    if (role === "supervisor") navigate("/supervisor");
+    else navigate("/menu");
   };
 
+  // ---------- Not signed in ----------
   if (!signedIn) {
     return (
       <Routes>
+        {/* ✅ Allow tester routes even when not signed in (dummy flow) */}
+        <Route path="/tester" element={
+          <div className="min-vh-100 bg-light">
+            <Header showSignOut={false} userName="" />
+            <div className="container py-4">
+              <TesterHome />
+            </div>
+          </div>
+        }/>
+        <Route path="/tester/assignments/:requestId" element={
+          <div className="min-vh-100 bg-light">
+            <Header showSignOut={false} userName="" />
+            <div className="container py-4">
+              <TesterAssignment />
+            </div>
+          </div>
+        }/>
+
+        {/* Default sign-in screen */}
         <Route path="/*" element={
           <div className="min-vh-100 bg-light">
             <Header showSignOut={false} userName="" />
@@ -106,43 +132,70 @@ function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole, userName, set
     );
   }
 
-  // Supervisor view
+  // ---------- Supervisor view ----------
   if (userRole === "supervisor") {
     return (
       <Routes>
+        {/* ✅ Expose tester routes for supervisors too */}
+        <Route path="/tester" element={
+          <div className="min-vh-100 bg-light">
+            <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
+            <div className="container py-4">
+              <TesterHome />
+            </div>
+          </div>
+        }/>
+        <Route path="/tester/assignments/:requestId" element={
+          <div className="min-vh-100 bg-light">
+            <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
+            <div className="container py-4">
+              <TesterAssignment />
+            </div>
+          </div>
+        }/>
+
         <Route path="/supervisor" element={
           <div className="min-vh-100 bg-light">
             <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
             <SupervisorMenu />
           </div>
-          
         } />
-        <Route
-        path="/manage-requests"
-        element={
+        <Route path="/manage-requests" element={
           <div className="min-vh-100 bg-light">
             <Header
               showSignOut={true}
               userName={userName}
-              onSignOut={() => {
-                setSignedIn(false);
-                setUserRole(null);
-                navigate("/");
-              }}
+              onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }}
             />
             <ManageRequests />
           </div>
-        }
-      />
-
+        } />
         <Route path="/*" element={<Navigate to="/supervisor" />} />
       </Routes>
     );
   }
 
-  // Staff view
+  // ---------- Staff view ----------
   return (
     <Routes>
+      {/* ✅ Expose tester routes for staff */}
+      <Route path="/tester" element={
+        <div className="min-vh-100 bg-light">
+          <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
+          <div className="container py-4">
+            <TesterHome />
+          </div>
+        </div>
+      } />
+      <Route path="/tester/assignments/:requestId" element={
+        <div className="min-vh-100 bg-light">
+          <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
+          <div className="container py-4">
+            <TesterAssignment />
+          </div>
+        </div>
+      } />
+
       <Route path="/menu" element={
         <div className="min-vh-100 bg-light">
           <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
@@ -175,7 +228,7 @@ function AppRoutes({ signedIn, setSignedIn, userRole, setUserRole, userName, set
             userName={userName}
             userEmail={userEmail}
             userPhone={userPhone}
-            supervisors={[]} // TODO: fetch and pass supervisors as in RaiseRequestForm
+            supervisors={[]}
             officeOptions={["Central Office", "North Branch", "South Branch"]}
             branchOptions={["Branch A", "Branch B", "Branch C"]}
             districtOptions={["District 1", "District 2", "District 3"]}
@@ -219,7 +272,7 @@ function App() {
   const [userEmail, setUserEmail] = useState(localStorage.getItem('userEmail') || "");
   const [userPhone, setUserPhone] = useState(localStorage.getItem('userPhone') || "");
 
-  // Keep localStorage in sync if state changes (optional, for robustness)
+  // Keep localStorage in sync if state changes
   useEffect(() => {
     localStorage.setItem('signedIn', signedIn ? 'true' : 'false');
     if (userRole) localStorage.setItem('userRole', userRole);

@@ -1,7 +1,7 @@
 const nodemailer = require('nodemailer');
 
-// Check if we're in test mode
-const isTestMode = process.env.NODE_ENV !== 'production';
+// Check if we're in test mode - forcing production mode
+const isTestMode = false; // Force production mode to use real email
 
 // Create a transporter object
 let transporter;
@@ -184,7 +184,7 @@ const sendSampleSubmissionEmail = async (projectData, samples) => {
 
     // Email options
     const mailOptions = {
-      from: process.env.EMAIL_USER || 'your-email@gmail.com',
+      from: process.env.EMAIL_USER || 'gldmsproject@outlook.com',
       to: 'Rhea.Dsouza@dot.ca.gov',
       subject: 'Samples submitted to GLDMS',
       html: `

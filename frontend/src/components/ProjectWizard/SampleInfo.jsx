@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import axios from 'axios';
 
 function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSample, index = 0 }) {
   const [samples, setSamples] = useState(data?.samples || []);
@@ -278,8 +279,28 @@ function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSampl
                   <button 
                     type="button" 
                     className="btn btn-success me-2" 
-                    onClick={() => {
-                      alert('Samples submitted successfully!');
+                    onClick={async () => {
+                      try {
+                        // Get project data from parent component
+                        const projectData = {
+                          projectID: data.projectID || '',
+                          ea: data.ea || '',
+                          projectName: data.projectName || '',
+                          district: data.district || ''
+                        };
+                        
+                        // Send email with all sample data
+                        const response = await axios.post('/api/emails/submit-samples', {
+                          projectData,
+                          samples: samples
+                        });
+                        
+                        console.log('Email sent:', response.data);
+                        alert('Samples submitted successfully! Email notification sent to Rhea.Dsouza@dot.ca.gov');
+                      } catch (error) {
+                        console.error('Error submitting samples:', error);
+                        alert('Error submitting samples: ' + (error.response?.data?.message || error.message));
+                      }
                     }}
                   >
                     <i className="bi bi-check-circle me-1"></i> Submit

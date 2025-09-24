@@ -173,7 +173,14 @@ function CreateProjectWizard({ userName, userEmail, userPhone, supervisors = [],
             {formData.SampleInfoSets.map((sampleInfoSet, index) => (
               <SampleInfo
                 key={index}
-                data={sampleInfoSet}
+                data={{
+                  ...sampleInfoSet,
+                  // Add project data needed for email
+                  projectID: formData.ProjectInfo?.projectID || formData.ProjectInfo?.efisProjectId,
+                  ea: formData.ProjectInfo?.ea,
+                  projectName: formData.ProjectInfo?.projectName,
+                  district: formData.ProjectInfo?.district
+                }}
                 boreholes={formData.Boreholes?.boreholes || []}
                 onChange={data => {
                   // Check if the data contains navigation flags

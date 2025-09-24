@@ -169,13 +169,13 @@ const sendSampleSubmissionEmail = async (projectData, samples) => {
     
     samples.forEach((sample, index) => {
       samplesHtml += `
-        <div style="margin-bottom: 15px; padding: 10px; background-color: #f5f5f5; border-left: 3px solid #007bff;">
+        <div style="margin-bottom: 15px; padding: 10px; background-color: #f5f5f5;">
           <p><strong>Sample ${index + 1}:</strong></p>
-          <p><strong>Sample ID:</strong> ${sample.sampleId || 'N/A'}</p>
           <p><strong>Borehole ID:</strong> ${sample.boreholeId || 'N/A'}</p>
-          <p><strong>Depth:</strong> ${sample.depthFrom || '0'} to ${sample.depthTo || '0'} ft</p>
-          <p><strong>Container Type:</strong> ${sample.containerType || 'N/A'}</p>
+          <p><strong>Sample ID:</strong> ${sample.sampleId || 'N/A'}</p>
+          <p><strong>Depth (ft) From/To:</strong> ${sample.depthFrom || '0'} to ${sample.depthTo || '0'}</p>
           <p><strong>Quantity:</strong> ${sample.quantity || 'N/A'}</p>
+          <p><strong>Container Type:</strong> ${sample.containerType === 'Tube' ? 'Tube (✓) Jar ()' : 'Tube () Jar (✓)'}</p>
           ${sample.tl101No ? `<p><strong>TL-101 Number:</strong> ${sample.tl101No}</p>` : ''}
           ${sample.fieldCollectionDate ? `<p><strong>Collection Date:</strong> ${sample.fieldCollectionDate}</p>` : ''}
         </div>
@@ -192,8 +192,6 @@ const sendSampleSubmissionEmail = async (projectData, samples) => {
         <div style="margin: 20px 0;">
           <p><strong>Project ID:</strong> ${projectData.projectID || 'N/A'}</p>
           <p><strong>EA:</strong> ${projectData.ea || 'N/A'}</p>
-          <p><strong>Project Name:</strong> ${projectData.projectName || 'N/A'}</p>
-          <p><strong>District:</strong> ${projectData.district || 'N/A'}</p>
         </div>
         <h3>Sample Details:</h3>
         ${samplesHtml}

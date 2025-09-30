@@ -23,8 +23,27 @@ export default function SamplesDetails({
     return "text-primary";
   };
 
+  const fmtDate = (d) => {
+    if (!d) return "—";
+    try {
+      const dt = new Date(d);
+      if (Number.isNaN(+dt)) return String(d);
+      return dt.toLocaleDateString();
+    } catch {
+      return String(d);
+    }
+  };
+
+  // Fallbacks so Request No shows up regardless of backend key naming
+  const requestNo =
+    active?.RequestNo ??
+    active?.RequestID ??
+    active?.TestRequestID ??
+    active?.Request_No ??
+    null;
+
   return (
-    <div className="lm-main">
+    <div className="lm-main d-flex">
       <style>{`
         .lm-sidebar {
           width: ${sidebarOpen ? `${SIDEBAR_OPEN_PX}px` : `${SIDEBAR_CLOSED_PX}px`};
@@ -45,9 +64,30 @@ export default function SamplesDetails({
         }
         .linklike { color: var(--bs-primary); text-decoration: none; }
         .linklike:hover { text-decoration: underline; }
+
+        /* Right header row to mimic your screenshot layout */
+        .summary-line {
+          display: grid;
+          grid-template-columns: repeat(5, 1fr);
+          gap: 16px;
+          padding: 10px 12px;
+          border: 1px solid var(--bs-border-color, #dee2e6);
+          border-bottom: none;
+          background: #f8f9fa;
+          margin-bottom: 0;
+          font-size: 0.95rem;
+        }
+        .summary-line .label { font-weight: 600; color: #333; margin-right: 6px; }
+        .summary-line .value { font-weight: 500; }
+        .summary-line .value.status { font-weight: 600; }
+        @media (max-width: 1200px) {
+          .summary-line { grid-template-columns: repeat(3, 1fr); }
+        }
         @media (max-width: 768px) {
-          .lm-sidebar { position: absolute; z-index: 1040; height: calc(100% - 52px); }
-          .lm-content { flex-basis: 100%; }
+          .summary-line { grid-template-columns: 1fr 1fr; }
+        }
+        @media (max-width: 576px) {
+          .summary-line { grid-template-columns: 1fr; }
         }
       `}</style>
 
@@ -119,37 +159,65 @@ export default function SamplesDetails({
         </div>
       </aside>
 
-      {/* RIGHT: minimal details (same four fields) */}
+      {/* RIGHT: formatted like your screenshot */}
       <section className="lm-content">
-        <div className="p-4 h-100 overflow-auto">
+        <div className="p-3 h-100 overflow-auto">
           {!active ? (
             <div className="text-muted">Select a sample to view its details.</div>
           ) : (
-            <div>
-              <h5 className="mb-3">Sample Details</h5>
+            <>
+              {/* Summary header line */}
+              <div className="summary-line">
+                <div>
+                  <span className="label">Sample ID:</span>
+                  <span className="value mono">{active.SampleID ?? "—"}</span>
+                </div>
+                <div>
+                  <span className="label">Project ID:</span>
+                  <span className="value mono">{active.EfisProjectId ?? "—"}</span>
+                </div>
+                <div>
+                  <span className="label">Request No.:</span>
+                  <span className="value mono">{requestNo ?? "—"}</span>
+                </div>
+                <div>
+                  <span className="label">Submitter:</span>
+                  <span className="value" style={{ color: "#b30000" }}>
+                    {active.CreatedBy ?? "—"}
+                  </span>
+                </div>
+                <div>
+                  <span className="label">Status:</span>
+                  <span className={`value status ${statusTextClass(active.Status)}`}>
+                    {active.Status ?? "—"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Borehole details table */}
               <div className="table-responsive">
-                <table className="table table-sm">
+                <table className="table table-bordered table-sm mb-0">
+                  <thead className="table-light">
+                    <tr>
+                      <th>Borehole ID</th>
+                      <th>Depth</th>
+                      <th>Size</th>
+                      <th>Type</th>
+                      <th>Date sampled in the field</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     <tr>
-                      <th style={{ width: 220 }}>Sample ID</th>
-                      <td className="mono">{active.SampleID ?? "—"}</td>
-                    </tr>
-                    <tr>
-                      <th>Project ID</th>
-                      <td className="mono">{active.EfisProjectId ?? "—"}</td>
-                    </tr>
-                    <tr>
-                      <th>Submitter</th>
-                      <td>{active.CreatedBy ?? "—"}</td>
-                    </tr>
-                    <tr>
-                      <th>Status</th>
-                      <td className={statusTextClass(active.Status)}>{active.Status ?? "—"}</td>
+                      <td>{active.BoreholeID ?? "—"}</td>
+                      <td>{active.Depth ?? "—"}</td>
+                      <td>{active.Size ?? "—"}</td>
+                      <td>{active.Type ?? "—"}</td>
+                      <td>{fmtDate(active.DateSampled)}</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
-            </div>
+            </>
           )}
         </div>
       </section>

@@ -12,9 +12,8 @@ import CreateProjectWizard from "./components/ProjectWizard/CreateProjectWizard"
 import ProjectsPage from "./pages/ProjectsPage";
 import SimpleProjectsTable from "./components/SimpleProjectsTable";
 
-// ✅ Tester dummy pages (route-level components living in components/)
-import TesterHome from "./components/TesterHome";
-import TesterAssignment from "./components/TesterAssignment";
+// ✅ Use your TesterDashboard component
+import TesterDashboard from "./components/TesterDashboard";
 
 function SupervisorDashboard() {
   return (
@@ -81,53 +80,54 @@ function AppRoutes({
   const [tab, setTab] = useState(0);
   const navigate = useNavigate();
 
-  // Simulate login with role selection (replace with real login logic)
+  // Called by <SignInBox/> on successful /api/login
   const handleSignIn = (role = "staff", name = "", email = "", phone = "") => {
     setSignedIn(true);
     setUserRole(role);
     setUserName(name);
     setUserEmail(email);
     setUserPhone(phone);
-    localStorage.setItem('signedIn', 'true');
-    localStorage.setItem('userRole', role);
-    localStorage.setItem('userName', name);
-    localStorage.setItem('userEmail', email);
-    localStorage.setItem('userPhone', phone);
-    if (role === "supervisor") navigate("/supervisor");
-    else navigate("/menu");
+
+    // Persist individual fields (existing behavior)
+    localStorage.setItem("signedIn", "true");
+    localStorage.setItem("userRole", role);
+    localStorage.setItem("userName", name);
+    localStorage.setItem("userEmail", email);
+    localStorage.setItem("userPhone", phone);
+
+    // ✅ Also persist the combined object that TesterDashboard reads
+    const gldmsUser = { userType: role, userName: name, email, phone };
+    localStorage.setItem("gldms_user", JSON.stringify(gldmsUser));
+
+    // ✅ Route by role (must match backend casing; your DB returns "Tester")
+    if (role === "supervisor") {
+      navigate("/supervisor");
+    } else if (role === "Tester") {
+      navigate("/tester");
+    } else {
+      navigate("/menu");
+    }
   };
 
   // ---------- Not signed in ----------
   if (!signedIn) {
     return (
       <Routes>
-        {/* ✅ Allow tester routes even when not signed in (dummy flow) */}
-        <Route path="/tester" element={
-          <div className="min-vh-100 bg-light">
-            <Header showSignOut={false} userName="" />
-            <div className="container py-4">
-              <TesterHome />
-            </div>
-          </div>
-        }/>
-        <Route path="/tester/assignments/:requestId" element={
-          <div className="min-vh-100 bg-light">
-            <Header showSignOut={false} userName="" />
-            <div className="container py-4">
-              <TesterAssignment />
-            </div>
-          </div>
-        }/>
-
         {/* Default sign-in screen */}
-        <Route path="/*" element={
-          <div className="min-vh-100 bg-light">
-            <Header showSignOut={false} userName="" />
-            <div className="d-flex flex-column align-items-center justify-content-center" style={{ minHeight: 'calc(100vh - 72px)' }}>
-              <SignInBox onSignIn={handleSignIn} />
+        <Route
+          path="/*"
+          element={
+            <div className="min-vh-100 bg-light">
+              <Header showSignOut={false} userName="" />
+              <div
+                className="d-flex flex-column align-items-center justify-content-center"
+                style={{ minHeight: "calc(100vh - 72px)" }}
+              >
+                <SignInBox onSignIn={handleSignIn} />
+              </div>
             </div>
-          </div>
-        } />
+          }
+        />
       </Routes>
     );
   }
@@ -136,149 +136,234 @@ function AppRoutes({
   if (userRole === "supervisor") {
     return (
       <Routes>
-        {/* ✅ Expose tester routes for supervisors too */}
-        <Route path="/tester" element={
-          <div className="min-vh-100 bg-light">
-            <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
-            <div className="container py-4">
-              <TesterHome />
+        <Route
+          path="/tester"
+          element={
+            <div className="min-vh-100 bg-light">
+              <Header
+                showSignOut={true}
+                userName={userName}
+                onSignOut={() => {
+                  setSignedIn(false);
+                  setUserRole(null);
+                  localStorage.removeItem("gldms_user");
+                  navigate("/");
+                }}
+              />
+              <div className="container py-4">
+                <TesterDashboard />
+              </div>
             </div>
-          </div>
-        }/>
-        <Route path="/tester/assignments/:requestId" element={
-          <div className="min-vh-100 bg-light">
-            <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
-            <div className="container py-4">
-              <TesterAssignment />
-            </div>
-          </div>
-        }/>
+          }
+        />
 
-        <Route path="/supervisor" element={
-          <div className="min-vh-100 bg-light">
-            <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
-            <SupervisorMenu />
-          </div>
-        } />
-        <Route path="/manage-requests" element={
-          <div className="min-vh-100 bg-light">
-            <Header
-              showSignOut={true}
-              userName={userName}
-              onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }}
-            />
-            <ManageRequests />
-          </div>
-        } />
+        <Route
+          path="/supervisor"
+          element={
+            <div className="min-vh-100 bg-light">
+              <Header
+                showSignOut={true}
+                userName={userName}
+                onSignOut={() => {
+                  setSignedIn(false);
+                  setUserRole(null);
+                  localStorage.removeItem("gldms_user");
+                  navigate("/");
+                }}
+              />
+              <SupervisorMenu />
+            </div>
+          }
+        />
+        <Route
+          path="/manage-requests"
+          element={
+            <div className="min-vh-100 bg-light">
+              <Header
+                showSignOut={true}
+                userName={userName}
+                onSignOut={() => {
+                  setSignedIn(false);
+                  setUserRole(null);
+                  localStorage.removeItem("gldms_user");
+                  navigate("/");
+                }}
+              />
+              <ManageRequests />
+            </div>
+          }
+        />
+
+        {/* Fallback */}
         <Route path="/*" element={<Navigate to="/supervisor" />} />
       </Routes>
     );
   }
 
-  // ---------- Staff view ----------
+  // ---------- Staff (default) view ----------
   return (
     <Routes>
-      {/* ✅ Expose tester routes for staff */}
-      <Route path="/tester" element={
-        <div className="min-vh-100 bg-light">
-          <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
-          <div className="container py-4">
-            <TesterHome />
+      {/* Tester route for signed-in non-supervisors */}
+      <Route
+        path="/tester"
+        element={
+          <div className="min-vh-100 bg-light">
+            <Header
+              showSignOut={true}
+              userName={userName}
+              onSignOut={() => {
+                setSignedIn(false);
+                setUserRole(null);
+                localStorage.removeItem("gldms_user");
+                navigate("/");
+              }}
+            />
+            <div className="container py-4">
+              <TesterDashboard />
+            </div>
           </div>
-        </div>
-      } />
-      <Route path="/tester/assignments/:requestId" element={
-        <div className="min-vh-100 bg-light">
-          <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
-          <div className="container py-4">
-            <TesterAssignment />
-          </div>
-        </div>
-      } />
+        }
+      />
 
-      <Route path="/menu" element={
-        <div className="min-vh-100 bg-light">
-          <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
-          <div className="container py-4">
-            <div className="row mb-4">
-              <div className="col-12">
-                <div className="d-flex justify-content-between align-items-center mb-3">
-                  <h4 className="m-0">Projects</h4>
-                </div>
-                <div className="card shadow">
-                  <div className="card-body p-0">
-                    <SimpleProjectsTable />
+      <Route
+        path="/menu"
+        element={
+          <div className="min-vh-100 bg-light">
+            <Header
+              showSignOut={true}
+              userName={userName}
+              onSignOut={() => {
+                setSignedIn(false);
+                setUserRole(null);
+                localStorage.removeItem("gldms_user");
+                navigate("/");
+              }}
+            />
+            <div className="container py-4">
+              <div className="row mb-4">
+                <div className="col-12">
+                  <div className="d-flex justify-content-between align-items-center mb-3">
+                    <h4 className="m-0">Projects</h4>
+                  </div>
+                  <div className="card shadow">
+                    <div className="card-body p-0">
+                      <SimpleProjectsTable />
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      } />
-      <Route path="/projects" element={
-        <div className="min-vh-100 bg-light">
-          <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
-          <ProjectsPage />
-        </div>
-      } />
-      <Route path="/create-project" element={
-        <div className="min-vh-100 bg-light">
-          <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
-          <CreateProjectWizard
-            userName={userName}
-            userEmail={userEmail}
-            userPhone={userPhone}
-            supervisors={[]}
-            officeOptions={["Central Office", "North Branch", "South Branch"]}
-            branchOptions={["Branch A", "Branch B", "Branch C"]}
-            districtOptions={["District 1", "District 2", "District 3"]}
-            countyOptions={["County A", "County B", "County C"]}
-            testTypes={[
-              { id: 1, name: "Moisture Content", methods: ["ASTM D2216"] },
-              { id: 2, name: "Unit Weight", methods: ["ASTM D7263-B"] },
-              { id: 3, name: "Particle Size Analysis", methods: ["ASTM D422", "ASTM D6913"] },
-              { id: 4, name: "Plasticity Index", methods: ["ASTM D4318"] },
-              { id: 5, name: "Specific Gravity", methods: ["ASTM D854", "AASHTO T100"] },
-              { id: 6, name: "Compaction", methods: ["CTM 216", "ASTM D1557"] },
-              { id: 7, name: "Consolidation", methods: ["ASTM D2435"] },
-              { id: 8, name: "Direct Shear", methods: ["ASTM D3080"] },
-              { id: 9, name: "Triaxial (CU)", methods: ["ASTM D4767"] },
-              { id: 10, name: "Triaxial (UU)", methods: ["ASTM D2850"] },
-              { id: 11, name: "Unconfined Compression (Soil) (qu)", methods: ["ASTM D2166"] },
-              { id: 12, name: "Point Load Index", methods: ["ASTM D5731"] },
-              { id: 13, name: "Unconfined Compression (Rock)", methods: ["ASTM D7012-C"] },
-              { id: 14, name: "Hydraulic Conductivity", methods: ["ASTM D5084"] },
-              { id: 15, name: "Corrosion", methods: ["CTM 643", "CTM 417", "CTM 422"] }
-            ]}
-          />
-        </div>
-      } />
-      <Route path="/main" element={
-        <div className="min-vh-100 bg-light text-dark">
-          <Header showSignOut={true} userName={userName} onSignOut={() => { setSignedIn(false); setUserRole(null); navigate("/"); }} />
-          <TabsDashboard tab={tab} setTab={setTab} tabs={tabs} />
-        </div>
-      } />
-      <Route path="/*" element={<Navigate to="/menu" />} />
+        }
+      />
+
+      <Route
+        path="/projects"
+        element={
+          <div className="min-vh-100 bg-light">
+            <Header
+              showSignOut={true}
+              userName={userName}
+              onSignOut={() => {
+                setSignedIn(false);
+                setUserRole(null);
+                localStorage.removeItem("gldms_user");
+                navigate("/");
+              }}
+            />
+            <ProjectsPage />
+          </div>
+        }
+      />
+
+      <Route
+        path="/create-project"
+        element={
+          <div className="min-vh-100 bg-light">
+            <Header
+              showSignOut={true}
+              userName={userName}
+              onSignOut={() => {
+                setSignedIn(false);
+                setUserRole(null);
+                localStorage.removeItem("gldms_user");
+                navigate("/");
+              }}
+            />
+            <CreateProjectWizard
+              userName={userName}
+              userEmail={userEmail}
+              userPhone={userPhone}
+              supervisors={[]}
+              officeOptions={["Central Office", "North Branch", "South Branch"]}
+              branchOptions={["Branch A", "Branch B", "Branch C"]}
+              districtOptions={["District 1", "District 2", "District 3"]}
+              countyOptions={["County A", "County B", "County C"]}
+              testTypes={[
+                { id: 1, name: "Moisture Content", methods: ["ASTM D2216"] },
+                { id: 2, name: "Unit Weight", methods: ["ASTM D7263-B"] },
+                { id: 3, name: "Particle Size Analysis", methods: ["ASTM D422", "ASTM D6913"] },
+                { id: 4, name: "Plasticity Index", methods: ["ASTM D4318"] },
+                { id: 5, name: "Specific Gravity", methods: ["ASTM D854", "AASHTO T100"] },
+                { id: 6, name: "Compaction", methods: ["CTM 216", "ASTM D1557"] },
+                { id: 7, name: "Consolidation", methods: ["ASTM D2435"] },
+                { id: 8, name: "Direct Shear", methods: ["ASTM D3080"] },
+                { id: 9, name: "Triaxial (CU)", methods: ["ASTM D4767"] },
+                { id: 10, name: "Triaxial (UU)", methods: ["ASTM D2850"] },
+                { id: 11, name: "Unconfined Compression (Soil) (qu)", methods: ["ASTM D2166"] },
+                { id: 12, name: "Point Load Index", methods: ["ASTM D5731"] },
+                { id: 13, name: "Unconfined Compression (Rock)", methods: ["ASTM D7012-C"] },
+                { id: 14, name: "Hydraulic Conductivity", methods: ["ASTM D5084"] },
+                { id: 15, name: "Corrosion", methods: ["CTM 643", "CTM 417", "CTM 422"] }
+              ]}
+            />
+          </div>
+        }
+      />
+
+      <Route
+        path="/main"
+        element={
+          <div className="min-vh-100 bg-light text-dark">
+            <Header
+              showSignOut={true}
+              userName={userName}
+              onSignOut={() => {
+                setSignedIn(false);
+                setUserRole(null);
+                localStorage.removeItem("gldms_user");
+                navigate("/");
+              }}
+            />
+            <TabsDashboard tab={tab} setTab={setTab} tabs={tabs} />
+          </div>
+        }
+      />
+
+      {/* Fallback: send Testers to /tester, others to /menu */}
+      <Route
+        path="/*"
+        element={<Navigate to={userRole === "Tester" ? "/tester" : "/menu"} />}
+      />
     </Routes>
   );
 }
 
 function App() {
   // Initialize state from localStorage
-  const [signedIn, setSignedIn] = useState(localStorage.getItem('signedIn') === 'true');
-  const [userRole, setUserRole] = useState(localStorage.getItem('userRole') || null);
-  const [userName, setUserName] = useState(localStorage.getItem('userName') || "");
-  const [userEmail, setUserEmail] = useState(localStorage.getItem('userEmail') || "");
-  const [userPhone, setUserPhone] = useState(localStorage.getItem('userPhone') || "");
+  const [signedIn, setSignedIn] = useState(localStorage.getItem("signedIn") === "true");
+  const [userRole, setUserRole] = useState(localStorage.getItem("userRole") || null);
+  const [userName, setUserName] = useState(localStorage.getItem("userName") || "");
+  const [userEmail, setUserEmail] = useState(localStorage.getItem("userEmail") || "");
+  const [userPhone, setUserPhone] = useState(localStorage.getItem("userPhone") || "");
 
-  // Keep localStorage in sync if state changes
+  // Keep localStorage in sync
   useEffect(() => {
-    localStorage.setItem('signedIn', signedIn ? 'true' : 'false');
-    if (userRole) localStorage.setItem('userRole', userRole);
-    if (userName) localStorage.setItem('userName', userName);
-    if (userEmail) localStorage.setItem('userEmail', userEmail);
-    if (userPhone) localStorage.setItem('userPhone', userPhone);
+    localStorage.setItem("signedIn", signedIn ? "true" : "false");
+    if (userRole) localStorage.setItem("userRole", userRole);
+    if (userName) localStorage.setItem("userName", userName);
+    if (userEmail) localStorage.setItem("userEmail", userEmail);
+    if (userPhone) localStorage.setItem("userPhone", userPhone);
   }, [signedIn, userRole, userName, userEmail, userPhone]);
 
   return (

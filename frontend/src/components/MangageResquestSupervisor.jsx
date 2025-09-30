@@ -1,45 +1,97 @@
-import React, { useEffect, useState, useMemo } from "react";
-import AssignmentDetails from "./AssignmentDetails"; // ⟵ new component
+// src/components/AppWithSidebar.jsx
+import React, { useEffect, useMemo, useState } from "react";
+import AssignmentDetails from "./AssignmentDetails";
+import SamplesDetails from "./SamplesDetails";
+
+// API endpoints
+const REQUESTS_API = "http://localhost:3001/api/supervisor/requests";
+const UPDATE_STATUS_API = "http://localhost:3001/api/supervisor/update-status"; // + /:id
+const SAMPLES_API = "http://localhost:3001/api/supervisor/samples";
 
 function AppWithSidebar() {
   // Tabs
   const [activeTab, setActiveTab] = useState("assignments");
 
-  // Data for assignments
-  const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedRequest, setSelectedRequest] = useState(null);
-  const [statusFilter, setStatusFilter] = useState("All");
-  const [sortOrder, setSortOrder] = useState("Newest");
-
-  // Sidebar (Assignments only)
+  // GLOBAL hamburger for all tabs
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const toggleSidebar = () => setSidebarOpen((s) => !s);
+  const SIDEBAR_OPEN_PX = 640;
+  const SIDEBAR_CLOSED_PX = 0;
 
+  // ===== Assignments state =====
+  const [requests, setRequests] = useState([]);
+  const [reqLoading, setReqLoading] = useState(true);
+  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [reqStatusFilter, setReqStatusFilter] = useState("All");
+  const [reqSortOrder, setReqSortOrder] = useState("Newest");
+
+  // ===== Samples state =====
+  const [samples, setSamples] = useState([]);
+  const [samplesLoading, setSamplesLoading] = useState(false);
+  const [selectedSample, setSelectedSample] = useState(null);
+
+  // ---------- Initial fetch (ALWAYS, so badges are populated) ----------
   useEffect(() => {
-    if (activeTab !== "assignments") return;
-    fetch("http://localhost:3001/api/supervisor/requests")
-      .then((res) => res.json())
-      .then((data) => {
-        setRequests(data || []);
-        setLoading(false);
+    // requests
+    setReqLoading(true);
+    fetch(REQUESTS_API)
+      .then((r) => r.json())
+      .then((data) => setRequests(Array.isArray(data) ? data : []))
+      .catch((e) => {
+        console.error("Initial requests fetch error:", e);
+        setRequests([]);
       })
-      .catch((err) => {
-        console.error("Error loading requests", err);
-        setLoading(false);
-      });
+      .finally(() => setReqLoading(false));
+
+    // samples
+    setSamplesLoading(true);
+    fetch(SAMPLES_API)
+      .then((r) => r.json())
+      .then((data) => setSamples(Array.isArray(data) ? data : []))
+      .catch((e) => {
+        console.error("Initial samples fetch error:", e);
+        setSamples([]);
+      })
+      .finally(() => setSamplesLoading(false));
+  }, []);
+
+  // ---------- Optional refresh when entering each tab ----------
+  useEffect(() => {
+    if (activeTab === "assignments") {
+      setReqLoading(true);
+      fetch(REQUESTS_API)
+        .then((res) => res.json())
+        .then((data) => setRequests(Array.isArray(data) ? data : []))
+        .catch((err) => {
+          console.error("Error loading requests", err);
+          setRequests([]);
+        })
+        .finally(() => setReqLoading(false));
+    }
   }, [activeTab]);
 
+  useEffect(() => {
+    if (activeTab === "samples") {
+      setSamplesLoading(true);
+      fetch(SAMPLES_API)
+        .then((res) => res.json())
+        .then((data) => setSamples(Array.isArray(data) ? data : []))
+        .catch((err) => {
+          console.error("Error loading samples", err);
+          setSamples([]);
+        })
+        .finally(() => setSamplesLoading(false));
+    }
+  }, [activeTab]);
+
+  // ---------- Assignments helpers ----------
   const updateStatus = async (id, newStatus) => {
     try {
-      const res = await fetch(
-        `http://localhost:3001/api/supervisor/update-status/${id}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: newStatus }),
-        }
-      );
+      const res = await fetch(`${UPDATE_STATUS_API}/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
 
       if (res.ok) {
         setRequests((prev) =>
@@ -63,27 +115,40 @@ function AppWithSidebar() {
   const filteredRequests = useMemo(() => {
     if (activeTab !== "assignments") return [];
     const list = (requests || []).filter((req) => {
-      if (statusFilter !== "All" && req.Status !== statusFilter) return false;
+      if (reqStatusFilter !== "All" && req.Status !== reqStatusFilter) return false;
       return true;
     });
     list.sort((a, b) => {
       const aId = Number(a.RequestID) || 0;
       const bId = Number(b.RequestID) || 0;
-      return sortOrder === "Newest" ? bId - aId : aId - bId;
+      return reqSortOrder === "Newest" ? bId - aId : aId - bId;
     });
     return list;
-  }, [activeTab, requests, statusFilter, sortOrder]);
+  }, [activeTab, requests, reqStatusFilter, reqSortOrder]);
 
+  // ===== Badges (always computed from state) =====
+  const submittedAssignmentsCount = useMemo(
+    () => requests.filter((req) => req.Status === "Submitted").length,
+    [requests]
+  );
+  const submittedSamplesCount = useMemo(
+    () => samples.filter((s) => s.Status === "Submitted").length,
+    [samples]
+  );
+
+  // shared status color helper
   const statusTextClass = (status) => {
-    if (status === "Submitted") return "text-danger";
-    if (status === "Assigned" || status === "In Progress") return "text-primary";
+    if (status === "Submitted" || status === "Rejected") return "text-danger";
+    if (
+      status === "Assigned" ||
+      status === "In Progress" ||
+      status === "Received" ||
+      status === "In Testing"
+    )
+      return "text-primary";
     if (status === "Completed" || status === "Complete") return "text-success";
-    if (status === "Rejected") return "text-danger";
     return "text-muted";
   };
-
-  const SIDEBAR_OPEN_PX = 640;
-  const SIDEBAR_CLOSED_PX = 0;
 
   return (
     <div className="d-flex flex-column" style={{ height: "100vh" }}>
@@ -105,8 +170,9 @@ function AppWithSidebar() {
           border: 1px solid var(--bs-border-color, #dee2e6); border-radius: .5rem; background: #fff;
         }
         .lm-hamburger:focus { outline: 2px solid #6ea8fe; outline-offset: 2px; }
-        .tbl-assignments { table-layout: fixed; }
-        .tbl-assignments th, .tbl-assignments td {
+        .tbl-assignments, .tbl-samples { table-layout: fixed; }
+        .tbl-assignments th, .tbl-assignments td,
+        .tbl-samples th, .tbl-samples td {
           padding: 10px 12px !important; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .mono {
@@ -121,29 +187,38 @@ function AppWithSidebar() {
         }
       `}</style>
 
-      {/* Top Bar */}
+      {/* Top Bar: one hamburger for ALL tabs */}
       <div className="lm-topbar px-3 py-2 d-flex align-items-center gap-2">
-        {activeTab === "assignments" && (
-          <button
-            type="button"
-            className="lm-hamburger"
-            aria-label={sidebarOpen ? "Collapse assignments table" : "Expand assignments table"}
-            aria-pressed={sidebarOpen}
-            onClick={toggleSidebar}
-            title={sidebarOpen ? "Hide assignments table" : "Show assignments table"}
-          >
-            <span className="d-inline-block" style={{ lineHeight: 0, fontSize: 20 }}>☰</span>
-          </button>
-        )}
+        <button
+          type="button"
+          className="lm-hamburger"
+          aria-label={sidebarOpen ? "Collapse left panel" : "Expand left panel"}
+          aria-pressed={sidebarOpen}
+          onClick={toggleSidebar}
+          title={sidebarOpen ? "Hide left panel" : "Show left panel"}
+        >
+          <span className="d-inline-block" style={{ lineHeight: 0, fontSize: 20 }}>☰</span>
+        </button>
 
         <div className="d-flex gap-2 flex-wrap">
           {["assignments", "samples", "tests", "staff", "projects"].map((tab) => (
             <button
               key={tab}
-              className={`btn btn-sm ${activeTab === tab ? "btn-primary" : "btn-outline-primary"}`}
+              className={`btn ${activeTab === tab ? "btn-primary" : "btn-outline-primary"}`}
+              style={{ padding: "10px 18px", fontSize: "16px", fontWeight: "500" }}
               onClick={() => setActiveTab(tab)}
             >
-              {tab === "staff" ? "Resources/Staff" : tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {tab === "staff"
+                ? "Resources/Staff"
+                : tab.charAt(0).toUpperCase() + tab.slice(1)}
+
+              {/* Badges (now always populated from initial fetch) */}
+              {tab === "assignments" && submittedAssignmentsCount > 0 && (
+                <span className="badge bg-danger ms-2">{submittedAssignmentsCount}</span>
+              )}
+              {tab === "samples" && submittedSamplesCount > 0 && (
+                <span className="badge bg-danger ms-2">{submittedSamplesCount}</span>
+              )}
             </button>
           ))}
         </div>
@@ -152,11 +227,11 @@ function AppWithSidebar() {
       {/* MAIN AREA */}
       {activeTab === "assignments" ? (
         <div className="lm-main">
-          {/* LEFT: Table */}
+          {/* LEFT: Assignments */}
           <aside className="lm-sidebar d-flex flex-column">
             <div className="lm-sticky-head p-3 d-flex justify-content-between align-items-center border-bottom bg-white">
               <h5 className="m-0">Assignments</h5>
-              {loading && <span className="spinner-border spinner-border-sm" />}
+              {reqLoading && <span className="spinner-border spinner-border-sm" />}
             </div>
 
             {/* Filters */}
@@ -166,8 +241,8 @@ function AppWithSidebar() {
                   <label className="form-label small mb-1">Status</label>
                   <select
                     className="form-select form-select-sm"
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
+                    value={reqStatusFilter}
+                    onChange={(e) => setReqStatusFilter(e.target.value)}
                   >
                     <option value="All">All</option>
                     <option value="Submitted">Submitted</option>
@@ -181,8 +256,8 @@ function AppWithSidebar() {
                   <label className="form-label small mb-1">Sort by</label>
                   <select
                     className="form-select form-select-sm"
-                    value={sortOrder}
-                    onChange={(e) => setSortOrder(e.target.value)}
+                    value={reqSortOrder}
+                    onChange={(e) => setReqSortOrder(e.target.value)}
                   >
                     <option value="Newest">Newest First</option>
                     <option value="Oldest">Oldest First</option>
@@ -200,7 +275,6 @@ function AppWithSidebar() {
                   <col style={{ width: "28%" }} />
                   <col style={{ width: "28%" }} />
                 </colgroup>
-
                 <thead className="table-light sticky-top" style={{ top: 0 }}>
                   <tr>
                     <th className="text-center">Request No.</th>
@@ -209,12 +283,11 @@ function AppWithSidebar() {
                     <th className="text-center">Status</th>
                   </tr>
                 </thead>
-
                 <tbody>
                   {filteredRequests.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="text-muted text-center py-4">
-                        {loading ? "Loading..." : "No assignments found."}
+                        {reqLoading ? "Loading..." : "No assignments found."}
                       </td>
                     </tr>
                   ) : (
@@ -256,17 +329,25 @@ function AppWithSidebar() {
             </div>
           </aside>
 
-          {/* RIGHT: Details */}
+          {/* RIGHT: Assignment Details */}
           <section className="lm-content">
             <div className="p-4 h-100 overflow-auto">
-              <AssignmentDetails request={selectedRequest} />
+              <AssignmentDetails request={selectedRequest} onUpdateStatus={() => {}} />
             </div>
           </section>
         </div>
+      ) : activeTab === "samples" ? (
+        // Samples layout handled inside SamplesDetails
+        <SamplesDetails
+          samples={samples}
+          selectedSample={selectedSample}
+          onSelectSample={setSelectedSample}
+          sidebarOpen={sidebarOpen}
+        />
       ) : (
         <div className="p-4">
           <h4>{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Panel</h4>
-          <p>This tab is under construction. Add your content here.</p>
+          <p className="text-muted">This tab is under construction.</p>
         </div>
       )}
     </div>

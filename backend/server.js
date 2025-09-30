@@ -65,6 +65,11 @@ app.use("/api/visiondb", visiondbRoutes);
 const assignmentsRouter = require("./routes/assignments")(db);
 app.use("/api", assignmentsRouter);
 
+// Request samples router
+const requestSamplesRoutes = require("./routes/request-samples")(db);
+app.use("/api/supervisor", requestSamplesRoutes);
+
+
 // ---------------- Ad-hoc endpoints ----------------
 app.get("/api/test-types", (req, res) => {
   const query = "SELECT * FROM test_type";

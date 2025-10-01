@@ -65,6 +65,10 @@ app.use("/api/emails", emailRoutes);
 const visiondbRoutes = require("./routes/visiondb");
 app.use("/api/visiondb", visiondbRoutes);
 
+// PDF generation routes
+const pdfRoutes = require("./routes/pdf");
+app.use("/api/pdf", pdfRoutes);
+
 // ✅ Assignments router (now also includes /assignments/:requestId/summary)
 const assignmentsRouter = require("./routes/assignments")(db);
 app.use("/api", assignmentsRouter);

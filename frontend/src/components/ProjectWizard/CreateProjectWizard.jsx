@@ -219,7 +219,12 @@ function CreateProjectWizard({ userName, userEmail, userPhone, supervisors = [],
               data={{
                 ...formData.TestsInfo,
                 structures: formData.ProjectInfo.structures || [],
-                samples: formData.SampleInfoSets.flatMap(set => set.samples || [])
+                samples: formData.SampleInfoSets.flatMap(set => set.samples || []),
+                projectInfo: {
+                  ...formData.ProjectInfo,
+                  requesterName: formData.RequesterInfo?.requesterName || userName
+                },
+                boreholes: formData.Boreholes?.boreholes || []
               }}
               onChange={data => {
                 // Check if the data contains navigation flags

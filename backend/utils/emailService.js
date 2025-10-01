@@ -1,102 +1,75 @@
 const nodemailer = require('nodemailer');
 
-// Check if we're in test mode - forcing production mode
-const isTestMode = false; // Force production mode to use real email
+// Email credentials
+const emailUser = 'gldmsproject@outlook.com';
+// New App password provided by user
+const emailPass = 'ouaxijjavwgkudsr';
 
-// Create a transporter object
-let transporter;
-
-// Function to create a test account and get transporter
-async function createTestTransporter() {
-  // Create a test account at ethereal.email
-  try {
-    // Create a SMTP transporter using the supplied credentials
-    const testAccount = await nodemailer.createTestAccount();
-    
-    // Log test account credentials
-    console.log('Test account created:', testAccount.user);
-    console.log('Test account password:', testAccount.pass);
-    
-    // Create reusable transporter object using the default SMTP transport
-    const tempTransporter = nodemailer.createTransport({
-      host: 'smtp.ethereal.email',
-      port: 587,
-      secure: false, // true for 465, false for other ports
-      auth: {
-        user: testAccount.user, // generated ethereal user
-        pass: testAccount.pass, // generated ethereal password
-      },
-    });
-    
-    console.log('Test email transporter created');
-    return tempTransporter;
-  } catch (error) {
-    console.error('Failed to create test account:', error);
-    // Fallback to logging only
-    return {
-      sendMail: (mailOptions) => {
-        return new Promise((resolve) => {
-          console.log('\n==== TEST EMAIL WOULD BE SENT (FALLBACK) ====');
-          console.log('To:', mailOptions.to);
-          console.log('Subject:', mailOptions.subject);
-          console.log('HTML Content:', mailOptions.html);
-          console.log('================================\n');
-          
-          // Simulate successful sending
-          resolve({ messageId: 'test-message-id-' + Date.now() });
-        });
-      }
-    };
-  }
-}
-
-// Initialize the transporter
-const initializeTransporter = async () => {
-  if (isTestMode) {
-    // In test mode, use ethereal.email (a test SMTP service)
-    console.log('Email service initializing in TEST MODE');
-    return await createTestTransporter();
-  } else {
-    // In production mode, use real SMTP
-    // Check if we should use Outlook or Gmail
-    const useOutlook = process.env.EMAIL_SERVICE === 'outlook' || false;
-    
-    if (useOutlook) {
-      // Outlook/Office365 configuration
-      return nodemailer.createTransport({
-        host: 'smtp.office365.com',
-        port: 587,
-        secure: false, // true for 465, false for other ports
-        auth: {
-          user: process.env.EMAIL_USER || 'your-email@outlook.com',
-          pass: process.env.EMAIL_PASS || 'your-password'
-        },
-        tls: {
-          ciphers: 'SSLv3'
-        }
-      });
-    } else {
-      // Default to Gmail
-      return nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: process.env.EMAIL_USER || 'your-email@gmail.com',
-          pass: process.env.EMAIL_PASS || 'your-app-password'
-        }
-      });
-    }
-  }
+// Create a real Outlook transporter with settings from Medium article
+const createOutlookTransporter = () => {
+  console.log('Creating Outlook transporter for', emailUser);
+  
+  // Configuration exactly as specified in the 2024 Medium article
+  return nodemailer.createTransport({
+    service: 'outlook',  // Use built-in 'outlook' service config
+    auth: {
+      user: emailUser,
+      pass: emailPass
+    },
+    host: 'smtp.office365.com',  // Adding host explicitly
+    secureConnection: false,     // TLS requires this
+    port: 587,                   // Using port 587 as recommended
+    tls: {
+      ciphers: 'SSLv3',         // Use this specific cipher as mentioned
+      rejectUnauthorized: false  // Don't fail on invalid certs
+    },
+    logger: true,
+    debug: true
+  });
 };
 
-// Initialize the transporter immediately
-(async () => {
-  try {
-    transporter = await initializeTransporter();
-    console.log('Email transporter initialized successfully');
-  } catch (error) {
-    console.error('Failed to initialize email transporter:', error);
-  }
-})();
+// Create a mock transporter for development that just logs emails
+const createMockTransporter = () => {
+  return {
+    sendMail: (mailOptions) => {
+      return new Promise((resolve) => {
+        console.log('\nMOCK EMAIL WOULD BE SENT ');
+        console.log('From:', mailOptions.from);
+        console.log('To:', mailOptions.to);
+        console.log('Subject:', mailOptions.subject);
+        console.log('HTML Content:', mailOptions.html);
+        console.log('================================\n');
+        
+        // Simulate successful sending
+        resolve({ messageId: 'mock-message-id-' + Date.now() });
+      });
+    }
+  };
+};
+
+// Trying Medium article solution with new configuration
+// Setting USE_REAL_EMAIL to true to test the Medium article approach
+const USE_REAL_EMAIL = true;
+
+// Initialize the appropriate transporter
+let transporter;
+
+if (USE_REAL_EMAIL) {
+  transporter = createOutlookTransporter();
+  console.log('Email service initialized with REAL Outlook transporter');
+  
+  // Test SMTP connection
+  transporter.verify(function(error, success) {
+    if (error) {
+      console.log('SMTP connection error:', error);
+    } else {
+      console.log('SMTP server connection successful - server is ready to send emails');
+    }
+  });
+} else {
+  transporter = createMockTransporter();
+  console.log('Email service initialized in MOCK MODE - emails will be logged but not sent');
+}
 
 /**
  * Send email notification to requester and supervisor about a new test request

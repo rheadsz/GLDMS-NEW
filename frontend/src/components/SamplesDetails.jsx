@@ -1,20 +1,68 @@
-import React from "react";
+// frontend/components/SamplesDetails.jsx
+import React, { useEffect, useMemo, useState } from "react";
 
+/**
+ * SamplesDetails
+ *
+ * Props:
+ *  - requestId?: number | string   // preferred
+ *  - request?: { RequestID?: any } // or pass the whole request object
+ *  - sidebarOpen?: boolean         // optional; default true
+ *
+ * Behavior:
+ *  - If requestId (or request.RequestID) is present, it calls:
+ *      GET /api/supervisor/request-samples/:requestId
+ *  - Otherwise, it calls:
+ *      GET /api/supervisor/samples
+ */
 export default function SamplesDetails({
-  // List + details mode
-  samples = [],                 // array of sample objects
-  selectedSample,               // selected sample object
-  onSelectSample = () => {},    // row click handler
-  sidebarOpen = true,           // from global hamburger
-
-  // (Optional) details-only fallback
-  sample,
+  requestId,
+  request,
+  sidebarOpen = true,
 }) {
   const SIDEBAR_OPEN_PX = 640;
   const SIDEBAR_CLOSED_PX = 0;
 
-  const active = selectedSample || sample || null;
+  const effectiveRequestId =
+    requestId ??
+    (request && (request.RequestID ?? request.RequestId ?? request.requestId)) ??
+    null;
 
+  const [rows, setRows] = useState([]);
+  const [active, setActive] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(null);
+  const [lastUrl, setLastUrl] = useState("");
+
+  useEffect(() => {
+    setRows([]);
+    setActive(null);
+    setErr(null);
+
+    let url = "";
+    if (effectiveRequestId != null && String(effectiveRequestId).trim() !== "") {
+      url = `/api/supervisor/request-samples/${effectiveRequestId}`;
+    } else {
+      url = `/api/supervisor/samples`;
+    }
+    setLastUrl(url);
+
+    setLoading(true);
+    fetch(url)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((items) => {
+        const arr = Array.isArray(items) ? items : (items.items || []);
+        setRows(arr);
+        setActive(arr[0] || null);
+      })
+      .catch((e) => setErr(e.message || "Failed to load samples"))
+      .finally(() => setLoading(false));
+  }, [effectiveRequestId]);
+
+  // ---------- helpers ----------
   const statusTextClass = (status) => {
     if (!status) return "text-muted";
     const s = String(status).toLowerCase();
@@ -34,13 +82,16 @@ export default function SamplesDetails({
     }
   };
 
-  // Fallbacks so Request No shows up regardless of backend key naming
-  const requestNo =
-    active?.RequestNo ??
-    active?.RequestID ??
-    active?.TestRequestID ??
-    active?.Request_No ??
-    null;
+  // Request number: **use RequestId** (camelCase), with a couple of fallbacks
+  const requestNo = useMemo(() => {
+    if (!active) return null;
+    return (
+      active.RequestId ??   // our backend normalizes to this
+      active.RequestID ??   // other endpoints might use ALL CAPS
+      active.RequestNo ??   // legacy
+      null
+    );
+  }, [active]);
 
   return (
     <div className="lm-main d-flex">
@@ -65,7 +116,6 @@ export default function SamplesDetails({
         .linklike { color: var(--bs-primary); text-decoration: none; }
         .linklike:hover { text-decoration: underline; }
 
-        /* Right header row to mimic your screenshot layout */
         .summary-line {
           display: grid;
           grid-template-columns: repeat(5, 1fr);
@@ -89,9 +139,15 @@ export default function SamplesDetails({
         @media (max-width: 576px) {
           .summary-line { grid-template-columns: 1fr; }
         }
+
+        .debug-bar {
+          font-size: 12px;
+          color: #6c757d;
+          padding: 4px 8px;
+        }
       `}</style>
 
-      {/* LEFT: structure-only table with four columns */}
+      {/* LEFT: Samples list */}
       <aside className="lm-sidebar d-flex flex-column">
         <div className="lm-sticky-head p-3 border-bottom bg-white">
           <h6 className="m-0">Samples</h6>
@@ -99,12 +155,6 @@ export default function SamplesDetails({
 
         <div className="flex-grow-1 overflow-auto">
           <table className="table table-sm table-hover table-striped mb-0 align-middle tbl-samples">
-            <colgroup>
-              <col style={{ width: "22%" }} />
-              <col style={{ width: "28%" }} />
-              <col style={{ width: "28%" }} />
-              <col style={{ width: "22%" }} />
-            </colgroup>
             <thead className="table-light sticky-top" style={{ top: 0 }}>
               <tr>
                 <th className="text-start">Sample ID</th>
@@ -114,30 +164,26 @@ export default function SamplesDetails({
               </tr>
             </thead>
             <tbody>
-              {samples.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="text-muted text-center py-4">
-                    No samples.
-                  </td>
-                </tr>
+              {loading ? (
+                <tr><td colSpan={4} className="text-center py-4">Loading…</td></tr>
+              ) : err ? (
+                <tr><td colSpan={4} className="text-danger text-center py-4">{err}</td></tr>
+              ) : rows.length === 0 ? (
+                <tr><td colSpan={4} className="text-muted text-center py-4">No samples.</td></tr>
               ) : (
-                samples.map((s) => {
-                  const key = s.SampleID ?? `${s.EfisProjectId}-${s.CreatedBy}`;
-                  const isActive =
-                    (selectedSample?.SampleID ?? selectedSample?.id) ===
-                    (s.SampleID ?? s.id);
-
+                rows.map((s) => {
+                  const isActive = (active?.SampleID ?? active?.id) === (s.SampleID ?? s.id);
                   return (
                     <tr
-                      key={key}
+                      key={s.SampleID ?? `${s.EfisProjectId}-${s.CreatedBy}`}
                       className={isActive ? "table-primary" : ""}
                       style={{ cursor: "pointer" }}
-                      onClick={() => onSelectSample(s)}
+                      onClick={() => setActive(s)}
                       tabIndex={0}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          onSelectSample(s);
+                          setActive(s);
                         }
                       }}
                       aria-selected={isActive}
@@ -157,9 +203,12 @@ export default function SamplesDetails({
             </tbody>
           </table>
         </div>
+
+        {/* Tiny debug bar to confirm endpoint */}
+        <div className="debug-bar">endpoint: <code>{lastUrl}</code></div>
       </aside>
 
-      {/* RIGHT: formatted like your screenshot */}
+      {/* RIGHT: details */}
       <section className="lm-content">
         <div className="p-3 h-100 overflow-auto">
           {!active ? (
@@ -194,13 +243,14 @@ export default function SamplesDetails({
                 </div>
               </div>
 
-              {/* Borehole details table */}
+              {/* Borehole details table (include more columns later if you add them to the query) */}
               <div className="table-responsive">
                 <table className="table table-bordered table-sm mb-0">
                   <thead className="table-light">
                     <tr>
                       <th>Borehole ID</th>
-                      <th>Depth</th>
+                      <th>Depth From</th>
+                      <th>Depth To</th>
                       <th>Size</th>
                       <th>Type</th>
                       <th>Date sampled in the field</th>
@@ -208,8 +258,9 @@ export default function SamplesDetails({
                   </thead>
                   <tbody>
                     <tr>
-                      <td>{active.BoreholeID ?? "—"}</td>
-                      <td>{active.Depth ?? "—"}</td>
+                      <td>{active.BoreholeID ?? active.BoreholeNumber ?? "—"}</td>
+                      <td>{active.DepthFrom ?? "—"}</td>
+                      <td>{active.DepthTo ?? "—"}</td>
                       <td>{active.Size ?? "—"}</td>
                       <td>{active.Type ?? "—"}</td>
                       <td>{fmtDate(active.DateSampled)}</td>

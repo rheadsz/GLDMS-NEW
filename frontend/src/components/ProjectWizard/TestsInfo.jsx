@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import axios from "axios";
 
 function TestsInfo({ data, onChange }) {
   // Extract data from props
@@ -34,6 +35,12 @@ function TestsInfo({ data, onChange }) {
   }];
   
   const [testRows, setTestRows] = useState(initialTestRows);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+
+  // Check if any test row has Sand Equivalent or Corrosion
+  const hasRelevantTests = testRows.some(row => 
+    row.tests && (row.tests.includes('Sand Equivalent') || row.tests.includes('Corrosion'))
+  );
 
   // Test options
   const testOptions = [
@@ -120,6 +127,58 @@ function TestsInfo({ data, onChange }) {
     });
   };
   
+  // Handle PDF generation
+  const handleGenerateTestForms = async () => {
+    setIsGeneratingPDF(true);
+    try {
+      // Get the parent formData from window or pass it through props
+      // For now, we'll need to access it from the parent component
+      console.log('Data available in TestsInfo:', data);
+      
+      // Prepare the data to send to backend
+      const requestData = {
+        testRows: testRows,
+        projectInfo: data.projectInfo || {},
+        boreholes: data.boreholes || [],
+        samples: samples
+      };
+      
+      console.log('Sending request data:', requestData);
+
+      const response = await axios.post('/api/pdf/generate-test-form', requestData, {
+        responseType: 'blob' // Important for downloading files
+      });
+
+      // Create a download link
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Get filename from response headers or use default
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = 'test-form.pdf';
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (filenameMatch && filenameMatch[1]) {
+          filename = filenameMatch[1].replace(/['"]/g, '');
+        }
+      }
+      
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      alert('Test form generated successfully!');
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Error generating test form: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
   // Handle toggling tests on and off
   const handleTestToggle = (rowId, testName) => {
     const updatedRows = testRows.map(row => {
@@ -262,7 +321,7 @@ function TestsInfo({ data, onChange }) {
           </table>
         </div>
         
-        <div className="d-flex justify-content-center mt-3">
+        <div className="d-flex justify-content-center gap-2 mt-3">
           <button 
             type="button" 
             className="btn btn-success" 
@@ -270,6 +329,26 @@ function TestsInfo({ data, onChange }) {
           >
             <i className="bi bi-plus-circle me-1"></i> Add new row
           </button>
+          
+          {hasRelevantTests && (
+            <button 
+              type="button" 
+              className="btn btn-primary" 
+              onClick={handleGenerateTestForms}
+              disabled={isGeneratingPDF}
+            >
+              {isGeneratingPDF ? (
+                <>
+                  <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <i className="bi bi-file-pdf me-1"></i> Generate Test Forms
+                </>
+              )}
+            </button>
+          )}
         </div>
         
         {/* Navigation buttons */}

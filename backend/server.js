@@ -57,9 +57,17 @@ app.use("/api/projects", projectsRoutes);
 const userProjectsRoutes = require("./routes/user-projects")(db);
 app.use("/api/user-projects", userProjectsRoutes);
 
+// Email routes
+const emailRoutes = require("./routes/emails")(db);
+app.use("/api/emails", emailRoutes);
+
 // Vision DB (no db injection in your original code)
 const visiondbRoutes = require("./routes/visiondb");
 app.use("/api/visiondb", visiondbRoutes);
+
+// PDF generation routes
+const pdfRoutes = require("./routes/pdf");
+app.use("/api/pdf", pdfRoutes);
 
 // ✅ Assignments router (now also includes /assignments/:requestId/summary)
 const assignmentsRouter = require("./routes/assignments")(db);

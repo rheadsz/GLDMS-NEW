@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from "react";
+import axios from 'axios';
 
 function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSample, index = 0 }) {
   const [samples, setSamples] = useState(data?.samples || []);
+  // Track the currently selected borehole
+  const [selectedBoreholeId, setSelectedBoreholeId] = useState(boreholes.length > 0 ? boreholes[0].boreholeId : null);
 
   // Group samples by boreholeId for rendering
   const getSamplesByBorehole = () => {
@@ -48,6 +51,11 @@ function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSampl
       }));
       setSamples(initialSamples);
       onChange({ ...data, samples: initialSamples });
+      
+      // Set first borehole as selected when boreholes are loaded
+      if (boreholes.length > 0 && !selectedBoreholeId) {
+        setSelectedBoreholeId(boreholes[0].boreholeId);
+      }
     }
   }, [boreholes]); // Only run when boreholes changes
 
@@ -104,198 +112,230 @@ function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSampl
             Please add boreholes in the previous step before adding samples.
           </div>
         ) : (
-          <>
-            {/* Group samples by borehole */}
-            {boreholes.map((borehole, boreholeIndex) => {
-              // Get samples for this borehole
-              const boreholeId = borehole.boreholeId;
-              const boreholeSamples = samples.filter(sample => sample.boreholeId === boreholeId);
-              
-              return (
-                <div key={borehole.id} className="mb-5 border-bottom pb-4">
-                  <div className="d-flex align-items-center mb-3 bg-light p-2 rounded">
-                    <h5 className="mb-0 flex-grow-1">Borehole: {boreholeId}</h5>
-                    <div className="form-group mb-0">
-                      <input 
-                        type="text" 
-                        className="form-control form-control-sm" 
-                        value={boreholeId} 
-                        readOnly
-                      />
-                    </div>
-                  </div>
-
-                  {/* Display samples for this borehole */}
-                  {boreholeSamples.length === 0 ? (
-                    <div className="text-center py-3 text-muted">
-                      <i className="bi bi-info-circle me-2"></i>
-                      No samples added yet for this borehole.
-                    </div>
-                  ) : (
-                    boreholeSamples.map((sample, sampleIndex) => (
-                      <div key={sample.id} className="mb-4 pb-3 ms-4" style={{ borderBottom: sampleIndex < boreholeSamples.length - 1 ? '1px dashed #dee2e6' : 'none' }}>
-                        <div className="d-flex justify-content-between align-items-center mb-3">
-                          <h6 className="mb-0">Sample {sampleIndex + 1}</h6>
-                          <button 
-                            type="button" 
-                            className="btn btn-outline-danger btn-sm"
-                            onClick={() => handleDeleteSample(sample.id)}
-                          >
-                            <i className="bi bi-trash"></i> Remove
-                          </button>
-                        </div>
-                        
-                        <div className="row mb-3">
-                          <div className="col-md-6">
-                            <label className="form-label">Sample ID (No.):</label>
-                            <input 
-                              type="text" 
-                              className="form-control form-control-sm" 
-                              value={sample.sampleId || ''} 
-                              onChange={(e) => handleSampleChange(sample.id, 'sampleId', e.target.value)}
-                            />
-                          </div>
-                          {/* Removed Borehole Dropdown since it's now organized by borehole */}
-                        </div>
-                        
-                        <div className="row mb-3">
-                          <div className="col-md-6">
-                            <label className="form-label">Depth(ft): From/To</label>
-                            <div className="d-flex gap-2">
-                              <input 
-                                type="text" 
-                                className="form-control form-control-sm" 
-                                placeholder="From" 
-                                value={sample.depthFrom || ''} 
-                                onChange={(e) => handleSampleChange(sample.id, 'depthFrom', e.target.value)}
-                              />
-                              <input 
-                                type="text" 
-                                className="form-control form-control-sm" 
-                                placeholder="To" 
-                                value={sample.depthTo || ''} 
-                                onChange={(e) => handleSampleChange(sample.id, 'depthTo', e.target.value)}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <label className="form-label">TL-101 No.:</label>
-                            <input 
-                              type="text" 
-                              className="form-control form-control-sm" 
-                              value={sample.tl101No || ''} 
-                              onChange={(e) => handleSampleChange(sample.id, 'tl101No', e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        
-                        <div className="row mb-3">
-                          <div className="col-md-6">
-                            <label className="form-label d-block">Tube/jar:</label>
-                            <div className="form-check form-check-inline">
-                              <input 
-                                className="form-check-input" 
-                                type="radio" 
-                                name={`containerType-${sample.id}`} 
-                                id={`tube-${sample.id}`} 
-                                value="Tube" 
-                                checked={sample.containerType === "Tube"} 
-                                onChange={() => handleSampleChange(sample.id, "containerType", "Tube")} 
-                              />
-                              <label className="form-check-label" htmlFor={`tube-${sample.id}`}>Tube</label>
-                            </div>
-                            <div className="form-check form-check-inline">
-                              <input 
-                                className="form-check-input" 
-                                type="radio" 
-                                name={`containerType-${sample.id}`} 
-                                id={`jar-${sample.id}`} 
-                                value="Jar" 
-                                checked={sample.containerType === "Jar"} 
-                                onChange={() => handleSampleChange(sample.id, "containerType", "Jar")} 
-                              />
-                              <label className="form-check-label" htmlFor={`jar-${sample.id}`}>Jar</label>
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <label className="form-label">Quantity(Repetition):</label>
-                            <input 
-                              type="text" 
-                              className="form-control form-control-sm" 
-                              value={sample.quantity || ''} 
-                              onChange={(e) => handleSampleChange(sample.id, 'quantity', e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        
-                        <div className="row mb-3">
-                          <div className="col-md-6">
-                            <label className="form-label">Sample Field Collection:</label>
-                            <input 
-                              type="date" 
-                              className="form-control form-control-sm" 
-                              value={sample.fieldCollectionDate || ''} 
-                              onChange={(e) => handleSampleChange(sample.id, 'fieldCollectionDate', e.target.value)}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-
-                  {/* Add another sample button for this borehole */}
-                  <div className="d-flex justify-content-center mt-3 mb-3">
-                    <button 
-                      type="button" 
-                      className="btn btn-success btn-sm" 
-                      onClick={() => handleAddAnotherSample(boreholeId)}
+          <div className="row">
+            {/* Borehole IDs column */}
+            <div className="col-md-3 border-end">
+              <div className="mb-3">
+                <h5 className="mb-3">Boreholes</h5>
+                <div className="list-group">
+                  {boreholes.map((borehole) => (
+                    <button
+                      key={borehole.id}
+                      type="button"
+                      className={`list-group-item list-group-item-action d-flex justify-content-between align-items-center ${selectedBoreholeId === borehole.boreholeId ? 'active' : ''}`}
+                      onClick={() => setSelectedBoreholeId(borehole.boreholeId)}
                     >
-                      <i className="bi bi-plus-circle me-1"></i> Add Another Sample for Borehole {boreholeId}
+                      <span>boreholeid- {borehole.boreholeId}</span>
+                      <span className="badge bg-primary rounded-pill">
+                        {samples.filter(sample => sample.boreholeId === borehole.boreholeId).length}
+                      </span>
                     </button>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Check for unassigned samples and display them */}
-            {samples.filter(sample => !boreholes.find(b => b.boreholeId === sample.boreholeId)).length > 0 && (
-              <div className="alert alert-warning mt-3">
-                <strong>Note:</strong> Some samples are associated with boreholes that no longer exist. Please reassign them.
-              </div>
-            )}
-
-            {/* Navigation buttons */}
-            <div className="row mt-4">
-              <div className="col-12 d-flex justify-content-between">
-                <button 
-                  type="button" 
-                  className="btn btn-secondary" 
-                  onClick={() => onChange({ ...data, samples: samples, _prevStep: true })}
-                >
-                  <i className="bi bi-arrow-left me-1"></i> Previous
-                </button>
-                <div>
-                  <button 
-                    type="button" 
-                    className="btn btn-success me-2" 
-                    onClick={() => {
-                      alert('Samples submitted successfully!');
-                    }}
-                  >
-                    <i className="bi bi-check-circle me-1"></i> Submit
-                  </button>
-                  <button 
-                    type="button" 
-                    className="btn btn-primary" 
-                    onClick={() => onChange({ ...data, samples: samples, _nextStep: true })}
-                  >
-                    Next <i className="bi bi-arrow-right"></i>
-                  </button>
+                  ))}
                 </div>
               </div>
             </div>
-          </>
+            
+            {/* Sample details area */}
+            <div className="col-md-9">
+              {selectedBoreholeId && (
+                <>
+                  {/* Display samples for selected borehole */}
+                  {(() => {
+                    const selectedBorehole = boreholes.find(b => b.boreholeId === selectedBoreholeId);
+                    if (!selectedBorehole) return null;
+                    
+                    const boreholeSamples = samples.filter(sample => sample.boreholeId === selectedBoreholeId);
+                    
+                    return (
+                      <div key={selectedBorehole.id} className="pb-4">
+                        <div className="d-flex align-items-center mb-3 bg-light p-2 rounded">
+                          <h5 className="mb-0 flex-grow-1">Borehole: {selectedBoreholeId}</h5>
+                        </div>
+  
+                        {/* Display samples for this borehole */}
+                        {boreholeSamples.length === 0 ? (
+                          <div className="text-center py-3 text-muted">
+                            <i className="bi bi-info-circle me-2"></i>
+                            No samples added yet for this borehole.
+                          </div>
+                        ) : (
+                          boreholeSamples.map((sample, sampleIndex) => (
+                            <div key={sample.id} className="mb-4 pb-3" style={{ borderBottom: sampleIndex < boreholeSamples.length - 1 ? '1px dashed #dee2e6' : 'none' }}>
+                              <div className="d-flex justify-content-between align-items-center mb-3">
+                                <h6 className="mb-0">Sample {sampleIndex + 1}</h6>
+                                <button 
+                                  type="button" 
+                                  className="btn btn-outline-danger btn-sm"
+                                  onClick={() => handleDeleteSample(sample.id)}
+                                >
+                                  <i className="bi bi-trash"></i> Remove
+                                </button>
+                              </div>
+                              
+                              <div className="row mb-3">
+                                <div className="col-md-6">
+                                  <label className="form-label">Sample ID (No.):</label>
+                                  <input 
+                                    type="text" 
+                                    className="form-control form-control-sm" 
+                                    value={sample.sampleId || ''} 
+                                    onChange={(e) => handleSampleChange(sample.id, 'sampleId', e.target.value)}
+                                  />
+                                </div>
+                              </div>
+                              
+                              <div className="row mb-3">
+                                <div className="col-md-6">
+                                  <label className="form-label">Depth(ft): From/To</label>
+                                  <div className="d-flex gap-2">
+                                    <input 
+                                      type="text" 
+                                      className="form-control form-control-sm" 
+                                      placeholder="From" 
+                                      value={sample.depthFrom || ''} 
+                                      onChange={(e) => handleSampleChange(sample.id, 'depthFrom', e.target.value)}
+                                    />
+                                    <input 
+                                      type="text" 
+                                      className="form-control form-control-sm" 
+                                      placeholder="To" 
+                                      value={sample.depthTo || ''} 
+                                      onChange={(e) => handleSampleChange(sample.id, 'depthTo', e.target.value)}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              <div className="row mb-3">
+                                <div className="col-md-6">
+                                  <label className="form-label d-block">Tube/jar:</label>
+                                  <div className="form-check form-check-inline">
+                                    <input 
+                                      className="form-check-input" 
+                                      type="radio" 
+                                      name={`containerType-${sample.id}`} 
+                                      id={`tube-${sample.id}`} 
+                                      value="Tube" 
+                                      checked={sample.containerType === "Tube"} 
+                                      onChange={() => handleSampleChange(sample.id, "containerType", "Tube")} 
+                                    />
+                                    <label className="form-check-label" htmlFor={`tube-${sample.id}`}>Tube</label>
+                                  </div>
+                                  <div className="form-check form-check-inline">
+                                    <input 
+                                      className="form-check-input" 
+                                      type="radio" 
+                                      name={`containerType-${sample.id}`} 
+                                      id={`jar-${sample.id}`} 
+                                      value="Jar" 
+                                      checked={sample.containerType === "Jar"} 
+                                      onChange={() => handleSampleChange(sample.id, "containerType", "Jar")} 
+                                    />
+                                    <label className="form-check-label" htmlFor={`jar-${sample.id}`}>Jar</label>
+                                  </div>
+                                </div>
+                                <div className="col-md-6">
+                                  <label className="form-label">Quantity(Repetition):</label>
+                                  <input 
+                                    type="text" 
+                                    className="form-control form-control-sm" 
+                                    value={sample.quantity || ''} 
+                                    onChange={(e) => handleSampleChange(sample.id, 'quantity', e.target.value)}
+                                  />
+                                </div>
+                              </div>
+                              
+                              <div className="row mb-3">
+                                <div className="col-md-6">
+                                  <label className="form-label">Sample Field Collection:</label>
+                                  <input 
+                                    type="date" 
+                                    className="form-control form-control-sm" 
+                                    value={sample.fieldCollectionDate || ''} 
+                                    onChange={(e) => handleSampleChange(sample.id, 'fieldCollectionDate', e.target.value)}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+
+                        {/* Add another sample button for this borehole */}
+                        <div className="d-flex justify-content-center mt-3 mb-3">
+                          <button 
+                            type="button" 
+                            className="btn btn-success btn-sm" 
+                            onClick={() => handleAddAnotherSample(selectedBoreholeId)}
+                          >
+                            <i className="bi bi-plus-circle me-1"></i> Add Another Sample
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </>
+              )}
+            </div>
+          </div>
         )}
+
+        {/* Check for unassigned samples and display them */}
+        {samples.filter(sample => !boreholes.find(b => b.boreholeId === sample.boreholeId)).length > 0 && (
+          <div className="alert alert-warning mt-3">
+            <strong>Note:</strong> Some samples are associated with boreholes that no longer exist. Please reassign them.
+          </div>
+        )}
+
+        {/* Navigation buttons */}
+        <div className="row mt-4">
+          <div className="col-12 d-flex justify-content-between">
+            <button 
+              type="button" 
+              className="btn btn-secondary" 
+              onClick={() => onChange({ ...data, samples: samples, _prevStep: true })}
+            >
+              <i className="bi bi-arrow-left me-1"></i> Previous
+            </button>
+            <div>
+              <button 
+                type="button" 
+                className="btn btn-success me-2" 
+                onClick={async () => {
+                  try {
+                    // Get project data from parent component
+                    const projectData = {
+                      projectID: data.projectID || '',
+                      ea: data.ea || '',
+                      projectName: data.projectName || '',
+                      district: data.district || ''
+                    };
+                    
+                    // Send email with all sample data
+                    const response = await axios.post('/api/emails/submit-samples', {
+                      projectData,
+                      samples: samples
+                    });
+                    
+                    console.log('Email sent:', response.data);
+                    alert('Samples submitted successfully! Email notification sent to Rhea.Dsouza@dot.ca.gov');
+                  } catch (error) {
+                    console.error('Error submitting samples:', error);
+                    alert('Error submitting samples: ' + (error.response?.data?.message || error.message));
+                  }
+                }}
+              >
+                <i className="bi bi-check-circle me-1"></i> Submit
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-primary" 
+                onClick={() => onChange({ ...data, samples: samples, _nextStep: true })}
+              >
+                Next <i className="bi bi-arrow-right"></i>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

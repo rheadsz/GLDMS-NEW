@@ -34,6 +34,13 @@ export default function SamplesDetails({
   const [err, setErr] = useState(null);
   const [lastUrl, setLastUrl] = useState("");
 
+  // Local UI state for the 2nd table
+  const [ui, setUi] = useState({
+    specimenCount: 1,
+    action: "Record Created",
+    actionDate: null,
+  });
+
   useEffect(() => {
     setRows([]);
     setActive(null);
@@ -54,9 +61,15 @@ export default function SamplesDetails({
         return r.json();
       })
       .then((items) => {
-        const arr = Array.isArray(items) ? items : (items.items || []);
+        const arr = Array.isArray(items) ? items : items.items || [];
         setRows(arr);
-        setActive(arr[0] || null);
+        const first = arr[0] || null;
+        setActive(first);
+        setUi({
+          specimenCount: 1,
+          action: "Record Created",
+          actionDate: null,
+        });
       })
       .catch((e) => setErr(e.message || "Failed to load samples"))
       .finally(() => setLoading(false));
@@ -82,16 +95,35 @@ export default function SamplesDetails({
     }
   };
 
-  // Request number: **use RequestId** (camelCase), with a couple of fallbacks
   const requestNo = useMemo(() => {
     if (!active) return null;
-    return (
-      active.RequestId ??   // our backend normalizes to this
-      active.RequestID ??   // other endpoints might use ALL CAPS
-      active.RequestNo ??   // legacy
-      null
-    );
+    return active.RequestId ?? active.RequestID ?? active.RequestNo ?? null;
   }, [active]);
+
+  const coordinatesTip = () => {
+    const lat =
+      active?.Latitude ?? active?.Lat ?? active?.lat ?? active?.Coordinates?.lat;
+    const lon =
+      active?.Longitude ?? active?.Lon ?? active?.lng ?? active?.Coordinates?.lng;
+    return lat != null && lon != null ? `Lat, Lon: ${lat}, ${lon}` : "No coordinates";
+  };
+
+  const assignedTip = () =>
+    active?.AssignedDate
+      ? `Assigned on: ${fmtDate(active.AssignedDate)}`
+      : "Not assigned yet";
+
+  const handleChangeCount = (e) =>
+    setUi((s) => ({ ...s, specimenCount: Number(e.target.value) || 1 }));
+
+  const handleChangeAction = (e) => {
+    const next = e.target.value;
+    setUi((s) => ({
+      ...s,
+      action: next,
+      actionDate: new Date().toISOString(),
+    }));
+  };
 
   return (
     <div className="lm-main d-flex">
@@ -130,21 +162,11 @@ export default function SamplesDetails({
         .summary-line .label { font-weight: 600; color: #333; margin-right: 6px; }
         .summary-line .value { font-weight: 500; }
         .summary-line .value.status { font-weight: 600; }
-        @media (max-width: 1200px) {
-          .summary-line { grid-template-columns: repeat(3, 1fr); }
-        }
-        @media (max-width: 768px) {
-          .summary-line { grid-template-columns: 1fr 1fr; }
-        }
-        @media (max-width: 576px) {
-          .summary-line { grid-template-columns: 1fr; }
-        }
+        @media (max-width: 1200px) { .summary-line { grid-template-columns: repeat(3, 1fr); } }
+        @media (max-width: 768px)  { .summary-line { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 576px)  { .summary-line { grid-template-columns: 1fr; } }
 
-        .debug-bar {
-          font-size: 12px;
-          color: #6c757d;
-          padding: 4px 8px;
-        }
+        .debug-bar { font-size: 12px; color: #6c757d; padding: 4px 8px; }
       `}</style>
 
       {/* LEFT: Samples list */}
@@ -172,13 +194,21 @@ export default function SamplesDetails({
                 <tr><td colSpan={4} className="text-muted text-center py-4">No samples.</td></tr>
               ) : (
                 rows.map((s) => {
-                  const isActive = (active?.SampleID ?? active?.id) === (s.SampleID ?? s.id);
+                  const isActive =
+                    (active?.SampleID ?? active?.id) === (s.SampleID ?? s.id);
                   return (
                     <tr
                       key={s.SampleID ?? `${s.EfisProjectId}-${s.CreatedBy}`}
                       className={isActive ? "table-primary" : ""}
                       style={{ cursor: "pointer" }}
-                      onClick={() => setActive(s)}
+                      onClick={() => {
+                        setActive(s);
+                        setUi({
+                          specimenCount: 1,
+                          action: "Record Created",
+                          actionDate: null,
+                        });
+                      }}
                       tabIndex={0}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
@@ -204,7 +234,6 @@ export default function SamplesDetails({
           </table>
         </div>
 
-        {/* Tiny debug bar to confirm endpoint */}
         <div className="debug-bar">endpoint: <code>{lastUrl}</code></div>
       </aside>
 
@@ -243,7 +272,7 @@ export default function SamplesDetails({
                 </div>
               </div>
 
-              {/* Borehole details table (include more columns later if you add them to the query) */}
+              {/* TABLE 1: Borehole details (Size column removed) */}
               <div className="table-responsive">
                 <table className="table table-bordered table-sm mb-0">
                   <thead className="table-light">
@@ -251,19 +280,79 @@ export default function SamplesDetails({
                       <th>Borehole ID</th>
                       <th>Depth From</th>
                       <th>Depth To</th>
-                      <th>Size</th>
                       <th>Type</th>
                       <th>Date sampled in the field</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <td>{active.BoreholeID ?? active.BoreholeNumber ?? "—"}</td>
+                      <td title={coordinatesTip()}>
+                        {active.BoreholeID ?? active.BoreholeNumber ?? "—"}
+                      </td>
                       <td>{active.DepthFrom ?? "—"}</td>
                       <td>{active.DepthTo ?? "—"}</td>
-                      <td>{active.Size ?? "—"}</td>
                       <td>{active.Type ?? "—"}</td>
                       <td>{fmtDate(active.DateSampled)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* TABLE 2: Requested tests / assignment */}
+              <div className="table-responsive mt-3">
+                <table className="table table-bordered table-sm mb-0">
+                  <thead className="table-light">
+                    <tr>
+                      <th>Requested Tests</th>
+                      <th>Assigned Tester</th>
+                      <th>Due Date</th>
+                      <th>Number of Specimen</th>
+                      <th>Action</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>{active.RequestedTests ?? active.TestsRequested ?? "—"}</td>
+
+                      <td title={assignedTip()}>
+                        {active.AssignedTester ?? active.Tester ?? "—"}
+                      </td>
+
+                      <td title={assignedTip()}>
+                        {fmtDate(active.DueDate ?? active.Due ?? null)}
+                      </td>
+
+                      <td title="Numbers from 1 to 5">
+                        <select
+                          className="form-select form-select-sm"
+                          value={ui.specimenCount}
+                          onChange={handleChangeCount}
+                          style={{ maxWidth: 120 }}
+                        >
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <option key={n} value={n}>{n}</option>
+                          ))}
+                        </select>
+                      </td>
+
+                      <td>
+                        <select
+                          className="form-select form-select-sm"
+                          value={ui.action}
+                          onChange={handleChangeAction}
+                          style={{ maxWidth: 170 }}
+                        >
+                          <option>Record Created</option>
+                          <option>Not Received</option>
+                          <option>Accepted</option>
+                          <option>Rejected</option>
+                        </select>
+                      </td>
+
+                      <td>
+                        {ui.actionDate ? fmtDate(ui.actionDate) : "—"}
+                      </td>
                     </tr>
                   </tbody>
                 </table>

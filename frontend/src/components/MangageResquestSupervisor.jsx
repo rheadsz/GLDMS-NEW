@@ -10,6 +10,15 @@ const SAMPLES_API = "http://localhost:3001/api/supervisor/samples";
 
 function AppWithSidebar() {
   // Tabs
+  // Keep stable keys for logic, but show new display names.
+  const TAB_CONFIG = [
+    { key: "assignments", label: "Assignments" },
+    { key: "samples", label: "Samples" },
+    { key: "tests", label: "Test Management" },   // renamed
+    { key: "staff", label: "Lab Management" },    // renamed
+    // removed { key: "projects", label: "Projects" }
+  ];
+
   const [activeTab, setActiveTab] = useState("assignments");
 
   // GLOBAL hamburger for all tabs
@@ -150,6 +159,9 @@ function AppWithSidebar() {
     return "text-muted";
   };
 
+  const activeLabel =
+    TAB_CONFIG.find((t) => t.key === activeTab)?.label ?? "Panel";
+
   return (
     <div className="d-flex flex-column" style={{ height: "100vh" }}>
       {/* Local styles */}
@@ -201,22 +213,20 @@ function AppWithSidebar() {
         </button>
 
         <div className="d-flex gap-2 flex-wrap">
-          {["assignments", "samples", "tests", "staff", "projects"].map((tab) => (
+          {TAB_CONFIG.map(({ key, label }) => (
             <button
-              key={tab}
-              className={`btn ${activeTab === tab ? "btn-primary" : "btn-outline-primary"}`}
+              key={key}
+              className={`btn ${activeTab === key ? "btn-primary" : "btn-outline-primary"}`}
               style={{ padding: "10px 18px", fontSize: "16px", fontWeight: "500" }}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => setActiveTab(key)}
             >
-              {tab === "staff"
-                ? "Resources/Staff"
-                : tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {label}
 
-              {/* Badges (now always populated from initial fetch) */}
-              {tab === "assignments" && submittedAssignmentsCount > 0 && (
+              {/* Badges */}
+              {key === "assignments" && submittedAssignmentsCount > 0 && (
                 <span className="badge bg-danger ms-2">{submittedAssignmentsCount}</span>
               )}
-              {tab === "samples" && submittedSamplesCount > 0 && (
+              {key === "samples" && submittedSamplesCount > 0 && (
                 <span className="badge bg-danger ms-2">{submittedSamplesCount}</span>
               )}
             </button>
@@ -346,7 +356,7 @@ function AppWithSidebar() {
         />
       ) : (
         <div className="p-4">
-          <h4>{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Panel</h4>
+          <h4>{activeLabel} Panel</h4>
           <p className="text-muted">This tab is under construction.</p>
         </div>
       )}

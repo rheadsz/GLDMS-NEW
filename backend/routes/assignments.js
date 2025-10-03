@@ -179,20 +179,22 @@ module.exports = (db) => {
     });
   });
 
-  // ---------- testers list ----------
+  // ---------- testers list (UserType='Tester') ----------
+  // Returns only usernames as strings: { items: ["Priya","Jordan",...] }
   router.get("/testers", (_req, res) => {
-    const sql = `SELECT UserID, UserName, Email FROM users ORDER BY UserName`;
+    const sql = `
+      SELECT UserName
+      FROM users
+      WHERE UserType = 'Tester'
+      ORDER BY UserName
+    `;
     db.query(sql, (err, rows) => {
       if (err) {
         console.error("GET /testers error:", err);
         return res.status(500).json({ error: "Server error" });
       }
-      const testers = rows.map((u) => ({
-        value: String(u.UserID),
-        label: u.UserName,
-        email: u.Email,
-      }));
-      res.json({ testers });
+      const items = rows.map((r) => r.UserName);
+      res.json({ items });
     });
   });
 

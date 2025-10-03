@@ -3,15 +3,12 @@ import React, { useEffect, useMemo, useState } from "react";
 function AssignmentDetails({ request, testers: testersProp }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-
-  // Testers as usernames (strings)
   const [testers, setTesters] = useState([]);
-
-  // Per-row draft state and “submitting” busy flags (frontend-only for now)
   const [drafts, setDrafts] = useState({});
   const [submitting, setSubmitting] = useState({});
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [assignedRows, setAssignedRows] = useState(() => new Set());
 
   // --- Helpers ---
   function formatDateOnly(value) {
@@ -21,28 +18,15 @@ function AssignmentDetails({ request, testers: testersProp }) {
     if (s.includes(" ")) return s.split(" ")[0];
     return s;
   }
-  const toYMD = (d) => d.toISOString().slice(0, 10);
-  const addDays = (start, days) => {
-    const d = new Date(start);
-    d.setDate(d.getDate() + days);
-    return toYMD(d);
-  };
-  const nextMonday = (start) => {
-    const d = new Date(start);
-    const day = d.getDay(); // 0 Sun .. 6 Sat
-    const delta = ((8 - day) % 7) || 7; // days to next Monday
-    d.setDate(d.getDate() + delta);
-    return toYMD(d);
-  };
-
-  // Prefer a stable row id
-  const getItemId = (r, i) => r.ItemID ?? r.DetailID ?? r.SampleTestID ?? r.TestID ?? r.id ?? i;
+  const getItemId = (r, i) =>
+    r.ItemID ?? r.DetailID ?? r.SampleTestID ?? r.TestID ?? r.id ?? i;
 
   // Load summary rows
   useEffect(() => {
     let mounted = true;
     setError(null);
     setNotice(null);
+    setAssignedRows(new Set());
 
     if (!request?.RequestID) {
       setRows([]);
@@ -60,13 +44,13 @@ function AssignmentDetails({ request, testers: testersProp }) {
         const items = Array.isArray(data.items) ? data.items : [];
         setRows(items);
 
-        // Initialize drafts from server values if present
         const nextDrafts = {};
+        const nextAssigned = new Set();
         items.forEach((row, i) => {
           const id = getItemId(row, i);
+          if (row.AssignedTester) nextAssigned.add(id);
           nextDrafts[id] = {
-            // Keep the key name 'testerId' but store USERNAME (string)
-            testerId: row.AssignedTesterId ?? row.AssignedStaff ?? "",
+            testerId: row.AssignedTester ?? "",
             resultDueDate:
               formatDateOnly(row.AssignedResultDueDate) !== "—"
                 ? formatDateOnly(row.AssignedResultDueDate)
@@ -75,10 +59,11 @@ function AssignmentDetails({ request, testers: testersProp }) {
               formatDateOnly(row.AssignedReportDueDate) !== "—"
                 ? formatDateOnly(row.AssignedReportDueDate)
                 : "",
-            comments: row.AssignmentComments ?? row.Notes ?? "",
+            comments: row.Notes ?? "",
           };
         });
         setDrafts(nextDrafts);
+        setAssignedRows(nextAssigned);
       })
       .catch((e) => {
         console.error("summary fetch error:", e);
@@ -94,22 +79,20 @@ function AssignmentDetails({ request, testers: testersProp }) {
     };
   }, [request?.RequestID]);
 
-  // Load testers from backend: /api/testers -> { items: ["User1","User2", ...] }
+  // Load testers
   useEffect(() => {
     let mounted = true;
-
-    // If testers are passed as prop, normalize to usernames (strings)
     if (Array.isArray(testersProp) && testersProp.length) {
       const normalized =
         typeof testersProp[0] === "string"
           ? testersProp
           : testersProp.map((t) => t?.name || t?.UserName).filter(Boolean);
       setTesters(normalized);
-      return () => { mounted = false; };
+      return () => {
+        mounted = false;
+      };
     }
-
     if (!request?.RequestID) return;
-
     fetch(`/api/testers`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -118,9 +101,8 @@ function AssignmentDetails({ request, testers: testersProp }) {
       .then((data) => {
         if (!mounted) return;
         const items = Array.isArray(data?.items) ? data.items : [];
-        // Expecting strings; if objects slip through, coerce to string username
         const usernames = items.map((t) =>
-          typeof t === "string" ? t : (t?.UserName || t?.name || String(t))
+          typeof t === "string" ? t : t?.UserName || t?.name || String(t)
         );
         setTesters(usernames);
       })
@@ -128,7 +110,6 @@ function AssignmentDetails({ request, testers: testersProp }) {
         console.error("testers fetch error:", e);
         if (mounted) setError("Couldn’t load testers.");
       });
-
     return () => {
       mounted = false;
     };
@@ -141,10 +122,11 @@ function AssignmentDetails({ request, testers: testersProp }) {
     }));
   }
 
-  // Frontend-only “Assign”: just shows a toast and marks row as “saved”
-  async function handleAssign(itemId) {
+  // --- REAL Assign submit ---
+  async function handleAssign(testId) {
     setError(null);
-    const d = drafts[itemId] || {};
+    setNotice(null);
+    const d = drafts[testId] || {};
     if (!d.testerId) {
       setError("Please select a tester.");
       return;
@@ -153,49 +135,31 @@ function AssignmentDetails({ request, testers: testersProp }) {
       setError("Add a result or report due date.");
       return;
     }
-    const isYMD = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
-    if (d.resultDueDate && !isYMD(d.resultDueDate)) {
-      setError("Result due date must be YYYY-MM-DD.");
-      return;
-    }
-    if (d.reportDueDate && !isYMD(d.reportDueDate)) {
-      setError("Report due date must be YYYY-MM-DD.");
-      return;
-    }
-
     try {
-      setSubmitting((s) => ({ ...s, [itemId]: true }));
-      await new Promise((r) => setTimeout(r, 400));
-      setNotice("Assignment saved locally (frontend demo). Wire backend next.");
+      setSubmitting((s) => ({ ...s, [testId]: true }));
+      const res = await fetch(`/api/assignments/${testId}/assign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assignedTester: d.testerId,
+          resultDueDate: d.resultDueDate || null,
+          reportDueDate: d.reportDueDate || null,
+          notes: d.comments || null,
+        }),
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || `HTTP ${res.status}`);
+      }
+      await res.json();
+      setNotice("Assignment saved ✅");
+      setAssignedRows((prev) => new Set([...prev, testId]));
+    } catch (e) {
+      console.error("assign error:", e);
+      setError("Couldn’t save assignment.");
     } finally {
-      setSubmitting((s) => ({ ...s, [itemId]: false }));
+      setSubmitting((s) => ({ ...s, [testId]: false }));
     }
-  }
-
-  function QuickSet({ onPick }) {
-    const today = toYMD(new Date());
-    return (
-      <div className="dropdown d-inline-block ms-1">
-        <button
-          className="btn btn-sm btn-outline-secondary dropdown-toggle"
-          type="button"
-          data-bs-toggle="dropdown"
-          aria-expanded="false"
-        >
-          Quick Set
-        </button>
-        <ul className="dropdown-menu">
-          <li><button className="dropdown-item" onClick={() => onPick(today)}>Today</button></li>
-          <li><button className="dropdown-item" onClick={() => onPick(addDays(new Date(), 3))}>+3 days</button></li>
-          <li><button className="dropdown-item" onClick={() => onPick(addDays(new Date(), 7))}>+7 days</button></li>
-          <li><button className="dropdown-item" onClick={() => onPick(addDays(new Date(), 14))}>+14 days</button></li>
-          <li><hr className="dropdown-divider" /></li>
-          <li><button className="dropdown-item" onClick={() => onPick(nextMonday(new Date()))}>Next Monday</button></li>
-          <li><hr className="dropdown-divider" /></li>
-          <li><button className="dropdown-item" onClick={() => onPick("")}>Clear</button></li>
-        </ul>
-      </div>
-    );
   }
 
   const busy = useMemo(
@@ -204,16 +168,16 @@ function AssignmentDetails({ request, testers: testersProp }) {
   );
 
   if (!request) {
-    return <div className="text-muted">Select an assignment to view its details.</div>;
+    return (
+      <div className="text-muted">Select an assignment to view its details.</div>
+    );
   }
 
   return (
-    <div>
-      {/* Alerts */}
+    <div className="fs-5">
       {error && <div className="alert alert-danger py-2 mb-2">{error}</div>}
       {notice && <div className="alert alert-success py-2 mb-2">{notice}</div>}
 
-      {/* Top info */}
       <div className="mb-3">
         <div className="row text-start">
           <div className="col-md-3 col-sm-6 mb-2">
@@ -234,18 +198,17 @@ function AssignmentDetails({ request, testers: testersProp }) {
         </div>
       </div>
 
-      {/* Requested Tests Table */}
-      <table className="table table-bordered align-middle">
+      <table className="table table-bordered align-middle fs-6">
         <thead className="table-light">
           <tr>
             <th>Requested Test</th>
             <th>Sample (Borehole ID-Depth)</th>
             <th>Request Submission Date</th>
             <th>Requested Due Date</th>
-            <th style={{ minWidth: 220 }}>Assigned Tester</th>
-            <th style={{ minWidth: 240 }}>Assigned Result Due Date</th>
-            <th style={{ minWidth: 240 }}>Assigned Report Due Date</th>
-            <th>Note/Comments</th>
+            <th>Assigned Tester</th>
+            <th>Result Due</th>
+            <th>Report Due</th>
+            <th>Comments</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -260,80 +223,85 @@ function AssignmentDetails({ request, testers: testersProp }) {
             </tr>
           ) : (
             rows.map((r, i) => {
-              const itemId = getItemId(r, i);
-              const d = drafts[itemId] || {};
-              const isSubmitting = !!submitting[itemId];
+              const testId = getItemId(r, i);
+              const d = drafts[testId] || {};
+              const isSubmitting = !!submitting[testId];
+              const assigned = assignedRows.has(testId);
 
               return (
-                <tr key={itemId}>
+                <tr key={testId}>
                   <td>{r.RequestedTest ?? "—"}</td>
                   <td className="text-danger">{r.BoreholeDepth ?? "—"}</td>
                   <td>{formatDateOnly(r.RequestSubmissionDate)}</td>
                   <td>{formatDateOnly(r.RequestedDueDate)}</td>
 
-                  {/* Tester (value and label are the username strings) */}
                   <td>
                     <select
-                      className="form-select form-select-sm"
+                      className="form-select"
+                      style={{ fontSize: "1rem" }}
                       value={d.testerId || ""}
-                      onChange={(e) => updateDraft(itemId, { testerId: e.target.value })}
-                      disabled={isSubmitting || testers.length === 0}
+                      onChange={(e) =>
+                        updateDraft(testId, { testerId: e.target.value })
+                      }
+                      disabled={isSubmitting || testers.length === 0 || assigned}
                     >
                       <option value="">— Select tester —</option>
                       {testers.map((name) => (
-                        <option key={name} value={name}>{name}</option>
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
                       ))}
                     </select>
                   </td>
 
-                  {/* Result due */}
-                  <td>
-                    <div className="d-flex align-items-center">
-                      <input
-                        type="date"
-                        className="form-control form-control-sm"
-                        value={d.resultDueDate || ""}
-                        onChange={(e) => updateDraft(itemId, { resultDueDate: e.target.value })}
-                        disabled={isSubmitting}
-                      />
-                      <QuickSet onPick={(val) => updateDraft(itemId, { resultDueDate: val })} />
-                    </div>
-                  </td>
-
-                  {/* Report due */}
-                  <td>
-                    <div className="d-flex align-items-center">
-                      <input
-                        type="date"
-                        className="form-control form-control-sm"
-                        value={d.reportDueDate || ""}
-                        onChange={(e) => updateDraft(itemId, { reportDueDate: e.target.value })}
-                        disabled={isSubmitting}
-                      />
-                      <QuickSet onPick={(val) => updateDraft(itemId, { reportDueDate: val })} />
-                    </div>
-                  </td>
-
-                  {/* Comments */}
                   <td>
                     <input
-                      type="text"
-                      className="form-control form-control-sm"
-                      placeholder="Comments"
-                      value={d.comments || ""}
-                      onChange={(e) => updateDraft(itemId, { comments: e.target.value })}
-                      disabled={isSubmitting}
+                      type="date"
+                      className="form-control"
+                      style={{ fontSize: "1rem" }}
+                      value={d.resultDueDate || ""}
+                      onChange={(e) =>
+                        updateDraft(testId, { resultDueDate: e.target.value })
+                      }
+                      disabled={isSubmitting || assigned}
                     />
                   </td>
 
-                  {/* Action */}
+                  <td>
+                    <input
+                      type="date"
+                      className="form-control"
+                      style={{ fontSize: "1rem" }}
+                      value={d.reportDueDate || ""}
+                      onChange={(e) =>
+                        updateDraft(testId, { reportDueDate: e.target.value })
+                      }
+                      disabled={isSubmitting || assigned}
+                    />
+                  </td>
+
+                  <td>
+                    <input
+                      type="text"
+                      className="form-control"
+                      style={{ fontSize: "1rem" }}
+                      placeholder="Comments"
+                      value={d.comments || ""}
+                      onChange={(e) =>
+                        updateDraft(testId, { comments: e.target.value })
+                      }
+                      disabled={isSubmitting || assigned}
+                    />
+                  </td>
+
                   <td>
                     <button
-                      className="btn btn-sm btn-outline-primary"
-                      onClick={() => handleAssign(itemId)}
-                      disabled={isSubmitting}
+                      className="btn btn-lg btn-outline-primary w-100"
+                      onClick={() => handleAssign(testId)}
+                      disabled={isSubmitting || assigned}
+                      style={{ fontSize: "1rem" }}
                     >
-                      {isSubmitting ? "Saving…" : "Assign"}
+                      {assigned ? "Assigned" : isSubmitting ? "Saving…" : "Assign"}
                     </button>
                   </td>
                 </tr>

@@ -17,7 +17,7 @@ module.exports = (db) => {
     SubmissionDate: r.RequestSubmissionDate ?? null,
     DueDate: r.RequestedDueDate ?? null,
 
-    AssignedStaff: r.AssignedStaff ?? null,
+    AssignedTester: r.AssignedTester ?? null,
     AssignedResultDueDate: r.ResultDueDate ?? null,
     AssignedReportDueDate: r.ReportDueDate ?? null,
     Notes: r.AssignmentNotes ?? r.Notes ?? null,
@@ -59,7 +59,7 @@ module.exports = (db) => {
         pt.TestID,
         pt.Status                                  AS TestStatus,
         DATE(pt.RequestedDate)                     AS RequestedDueDate,
-        pt.AssignedStaff,
+        pt.AssignedTester,
         DATE(pt.ResultDueDate)                     AS ResultDueDate,
         DATE(pt.ReportDueDate)                     AS ReportDueDate,
         pt.AssignmentNotes,
@@ -145,7 +145,7 @@ module.exports = (db) => {
     });
   });
 
-  // ---------- quick diagnostics: GET /api/assignments/:requestId/debug ----------
+  // ---------- quick diagnostics ----------
   router.get("/assignments/:requestId/debug", (req, res) => {
     const requestId = Number(req.params.requestId);
     if (!Number.isInteger(requestId))
@@ -179,8 +179,7 @@ module.exports = (db) => {
     });
   });
 
-  // ---------- testers list (UserType='Tester') ----------
-  // Returns only usernames as strings: { items: ["Priya","Jordan",...] }
+  // ---------- testers list ----------
   router.get("/testers", (_req, res) => {
     const sql = `
       SELECT UserName
@@ -204,13 +203,13 @@ module.exports = (db) => {
     if (!Number.isInteger(testId))
       return res.status(400).json({ error: "Invalid test id" });
 
-    const { assignedStaff, resultDueDate, reportDueDate, notes } = req.body || {};
+    const { assignedTester, resultDueDate, reportDueDate, notes } = req.body || {};
     const sets = [];
     const params = [];
 
-    if (assignedStaff !== undefined) {
-      sets.push("AssignedStaff = ?");
-      params.push(String(assignedStaff));
+    if (assignedTester !== undefined) {
+      sets.push("AssignedTester = ?");
+      params.push(assignedTester || null);
     }
     if (resultDueDate !== undefined) {
       sets.push("ResultDueDate = ?");
@@ -224,15 +223,17 @@ module.exports = (db) => {
       sets.push("AssignmentNotes = ?");
       params.push(notes || null);
     }
+
     if (sets.length === 0) return res.status(400).json({ error: "No fields to update" });
 
+    // always move test to In Progress unless already Completed
     sets.push("Status = IF(Status='Completed','Completed','In Progress')");
     sets.push("UpdatedAt = CURRENT_TIMESTAMP");
 
-    const sql = `UPDATE project_tests SET ${sets.join(", ")} WHERE TestID = ?`;
-    params.push(testId);
+    const sqlUpdateTest = `UPDATE project_tests SET ${sets.join(", ")} WHERE TestID = ?`;
+    const paramsTest = [...params, testId];
 
-    db.query(sql, params, (err, result) => {
+    db.query(sqlUpdateTest, paramsTest, (err, result) => {
       if (err) {
         console.error("POST /assignments/:testId/assign error:", err);
         return res.status(500).json({ error: "Server error" });
@@ -240,11 +241,76 @@ module.exports = (db) => {
       if (result.affectedRows === 0) {
         return res.status(404).json({ error: "Test not found" });
       }
-      res.json({ ok: true, TestID: testId });
+
+      // 1) Identify the parent RequestID for this TestID
+      const sqlGetReq = `SELECT RequestID FROM project_tests WHERE TestID = ?`;
+      db.query(sqlGetReq, [testId], (e0, r0) => {
+        if (e0) {
+          console.error("assign: get RequestID error:", e0);
+          return res.json({ ok: true, TestID: testId, requestStatusUpdated: false });
+        }
+        const requestId = r0?.[0]?.RequestID;
+        if (!requestId) {
+          return res.json({ ok: true, TestID: testId, requestStatusUpdated: false });
+        }
+
+        // 2) Count total tests vs assigned tests for that RequestID
+        const sqlCounts = `
+          SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN AssignedTester IS NOT NULL AND AssignedTester <> '' THEN 1 ELSE 0 END) AS assigned
+          FROM project_tests
+          WHERE RequestID = ?
+        `;
+        db.query(sqlCounts, [requestId], (e1, r1) => {
+          if (e1) {
+            console.error("assign: count tests error:", e1);
+            return res.json({ ok: true, TestID: testId, requestStatusUpdated: false });
+          }
+
+          const total = Number(r1?.[0]?.total || 0);
+          const assigned = Number(r1?.[0]?.assigned || 0);
+          const allAssigned = total > 0 && assigned === total;
+
+          if (!allAssigned) {
+            // Do not update the request status unless ALL tests are assigned
+            return res.json({
+              ok: true,
+              TestID: testId,
+              requestStatusUpdated: false,
+              totals: { total, assigned }
+            });
+          }
+
+          // 3) All tests assigned -> set parent request to 'Assigned'
+          const sqlSetRequest = `
+            UPDATE project_requests
+            SET Status = 'Assigned'
+            WHERE RequestID = ? AND Status <> 'Assigned'
+          `;
+          db.query(sqlSetRequest, [requestId], (e2, r2) => {
+            if (e2) {
+              console.error("assign: set request Assigned error:", e2);
+              return res.json({
+                ok: true,
+                TestID: testId,
+                requestStatusUpdated: false,
+                totals: { total, assigned }
+              });
+            }
+            res.json({
+              ok: true,
+              TestID: testId,
+              requestStatusUpdated: r2.affectedRows > 0,
+              totals: { total, assigned }
+            });
+          });
+        });
+      });
     });
   });
 
-  // ---------- summary: GET /api/assignments/:requestId/summary ----------
+  // ---------- summary ----------
   router.get("/assignments/:requestId/summary", (req, res) => {
     const requestId = Number(req.params.requestId);
     if (!Number.isInteger(requestId)) {
@@ -257,7 +323,12 @@ module.exports = (db) => {
         DATE(pr.RequestDate)       AS RequestSubmissionDate,
         DATE(pt.RequestedDate)     AS RequestedDueDate,
         tt.TestName                AS RequestedTest,
-        CONCAT(pb.BoreholeNumber, ' (', ps.DepthFrom, '–', ps.DepthTo, ')') AS BoreholeDepth
+        CONCAT(pb.BoreholeNumber, ' (', ps.DepthFrom, '–', ps.DepthTo, ')') AS BoreholeDepth,
+        pt.TestID,
+        pt.AssignedTester,
+        DATE(pt.ResultDueDate)     AS AssignedResultDueDate,
+        DATE(pt.ReportDueDate)     AS AssignedReportDueDate,
+        pt.AssignmentNotes         AS Notes
       FROM project_requests pr
       LEFT JOIN project_tests     pt ON pt.RequestID  = pr.RequestID
       LEFT JOIN test_type         tt ON tt.TestTypeID = pt.TestTypeID
@@ -272,10 +343,15 @@ module.exports = (db) => {
 
       if (rowsNew && rowsNew.length > 0) {
         const items = rowsNew.map(r => ({
+          TestID: r.TestID,
           RequestedTest: r.RequestedTest ?? "—",
           BoreholeDepth: r.BoreholeDepth ?? "—",
           RequestSubmissionDate: r.RequestSubmissionDate ?? "—",
           RequestedDueDate: r.RequestedDueDate ?? "—",
+          AssignedTester: r.AssignedTester ?? null,
+          AssignedResultDueDate: r.AssignedResultDueDate ?? null,
+          AssignedReportDueDate: r.AssignedReportDueDate ?? null,
+          Notes: r.Notes ?? null,
         }));
         return res.json({ requestId, items });
       }
@@ -286,7 +362,8 @@ module.exports = (db) => {
           DATE(tr.DateOfRequest)      AS RequestSubmissionDate,
           DATE(tr.TestResultsDueDate) AS RequestedDueDate,
           tt.TestName                 AS RequestedTest,
-          CONCAT(trd.BoreholeID, ' (', trd.DepthFrom, '–', trd.DepthTo, ')') AS BoreholeDepth
+          CONCAT(trd.BoreholeID, ' (', trd.DepthFrom, '–', trd.DepthTo, ')') AS BoreholeDepth,
+          trd.DetailID                AS TestID
         FROM test_request tr
         JOIN test_request_details trd ON trd.RequestID = tr.RequestID
         LEFT JOIN test_type tt         ON tt.TestTypeID = trd.TestTypeID
@@ -298,10 +375,15 @@ module.exports = (db) => {
         if (err2) return res.status(500).json({ error: "Server error" });
 
         const items = (rowsOld || []).map(r => ({
+          TestID: r.TestID,
           RequestedTest: r.RequestedTest ?? "—",
           BoreholeDepth: r.BoreholeDepth ?? "—",
           RequestSubmissionDate: r.RequestSubmissionDate ?? "—",
           RequestedDueDate: r.RequestedDueDate ?? "—",
+          AssignedTester: null,
+          AssignedResultDueDate: null,
+          AssignedReportDueDate: null,
+          Notes: null,
         }));
 
         return res.json({ requestId, items });

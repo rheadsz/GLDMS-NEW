@@ -6,22 +6,39 @@ module.exports = function requestSamplesRouter(db) {
 
   // ==========================================
   // GET /api/supervisor/request-samples
-  // (unfiltered list; useful for quick checks)
-  // Returns: SampleID, BoreholeID, RequestId, EfisProjectId, CreatedBy, Status
+  // Returns (one row per test; samples without tests still appear):
+  //  - From project_samples: SampleID, RequestID, SampleStatus, BoreholeID, DepthFrom, DepthTo, ContainerType, FieldCollectionDate
+  //  - From project: EfisProjectID
+  //  - From project_requests: RequestingUser
+  //  - From project_tests: AssignedTester, ResultDueDate
+  //  - From test_type: TestName
   // ==========================================
   router.get("/request-samples", (_req, res) => {
     const sql = `
-      SELECT 
+      SELECT
         ps.SampleID,
+        ps.RequestID,
+        ps.SampleStatus AS Status,
         ps.BoreholeID,
-        ps.RequestID       AS RequestId,
-        p.EfisProjectId    AS EfisProjectId,
-        pr.RequestingUser  AS CreatedBy,
-        pr.Status          AS Status
-      FROM project_samples ps
-      JOIN project_requests pr ON ps.RequestID = pr.RequestID
-      JOIN project p          ON pr.ProjectID = p.ProjectID
-      ORDER BY ps.SampleID DESC
+        ps.DepthFrom,
+        ps.DepthTo,
+        ps.ContainerType,
+        ps.FieldCollectionDate,
+        p.EfisProjectID,
+        pr.RequestingUser AS CreatedBy,
+        tt.TestName,
+        pt.AssignedTester,
+        pt.ResultDueDate
+      FROM project_samples AS ps
+      JOIN project_requests AS pr
+        ON pr.RequestID = ps.RequestID
+      JOIN project AS p
+        ON p.ProjectID = pr.ProjectID
+      LEFT JOIN project_tests AS pt
+        ON pt.SampleID = ps.SampleID
+      LEFT JOIN test_type AS tt
+        ON tt.TestTypeID = pt.TestTypeID
+      ORDER BY ps.SampleID DESC, pt.ResultDueDate IS NULL, pt.ResultDueDate ASC;
     `;
 
     db.query(sql, (err, rows) => {
@@ -29,10 +46,7 @@ module.exports = function requestSamplesRouter(db) {
         console.error("[ERR] GET /api/supervisor/request-samples:", err.message);
         return res.status(500).json({ error: "Failed to fetch samples." });
       }
-
       console.log(`[REQ] GET /api/supervisor/request-samples → ${rows.length} rows`);
-      console.log(JSON.stringify(rows, null, 2));
-
       res.json(rows || []);
     });
   });

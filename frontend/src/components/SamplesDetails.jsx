@@ -5,36 +5,24 @@ import React, { useEffect, useMemo, useState } from "react";
  * SamplesDetails
  *
  * Props:
- *  - requestId?: number | string   // preferred
- *  - request?: { RequestID?: any } // or pass the whole request object
- *  - sidebarOpen?: boolean         // optional; default true
+ *  - requestId?: number | string  // optional: filters rows by RequestID (client side)
+ *  - sidebarOpen?: boolean        // optional; default true
  *
- * Behavior:
- *  - If requestId (or request.RequestID) is present, it calls:
- *      GET /api/supervisor/request-samples/:requestId
- *  - Otherwise, it calls:
- *      GET /api/supervisor/samples
+ * Endpoint used:
+ *   GET /api/supervisor/request-samples
+ *   Returns one row per (sample x test). We group by SampleID for the left list,
+ *   and show all tests for the selected sample on the right.
  */
-export default function SamplesDetails({
-  requestId,
-  request,
-  sidebarOpen = true,
-}) {
+export default function SamplesDetails({ requestId, sidebarOpen = true }) {
   const SIDEBAR_OPEN_PX = 640;
   const SIDEBAR_CLOSED_PX = 0;
 
-  const effectiveRequestId =
-    requestId ??
-    (request && (request.RequestID ?? request.RequestId ?? request.requestId)) ??
-    null;
-
   const [rows, setRows] = useState([]);
-  const [active, setActive] = useState(null);
+  const [active, setActive] = useState(null); // the selected sample (summary)
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
-  const [lastUrl, setLastUrl] = useState("");
 
-  // Local UI state for the 2nd table
+  // local UI state for the action controls
   const [ui, setUi] = useState({
     specimenCount: 1,
     action: "Record Created",
@@ -42,40 +30,63 @@ export default function SamplesDetails({
   });
 
   useEffect(() => {
+    setLoading(true);
+    setErr(null);
     setRows([]);
     setActive(null);
-    setErr(null);
 
-    let url = "";
-    if (effectiveRequestId != null && String(effectiveRequestId).trim() !== "") {
-      url = `/api/supervisor/request-samples/${effectiveRequestId}`;
-    } else {
-      url = `/api/supervisor/samples`;
-    }
-    setLastUrl(url);
-
-    setLoading(true);
-    fetch(url)
+    fetch("/api/supervisor/request-samples")
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
       .then((items) => {
-        const arr = Array.isArray(items) ? items : items.items || [];
-        setRows(arr);
-        const first = arr[0] || null;
-        setActive(first);
-        setUi({
-          specimenCount: 1,
-          action: "Record Created",
-          actionDate: null,
-        });
+        const all = Array.isArray(items) ? items : [];
+        // Optional filter by RequestID (client-side)
+        const filtered = requestId
+          ? all.filter((r) => String(r.RequestID) === String(requestId))
+          : all;
+        setRows(filtered);
+        setUi({ specimenCount: 1, action: "Record Created", actionDate: null });
       })
       .catch((e) => setErr(e.message || "Failed to load samples"))
       .finally(() => setLoading(false));
-  }, [effectiveRequestId]);
+  }, [requestId]);
 
-  // ---------- helpers ----------
+  // Group rows by SampleID (because backend returns one row per test)
+  const groupedBySample = useMemo(() => {
+    const map = new Map();
+    for (const r of rows) {
+      const key = r.SampleID;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(r);
+    }
+    return map;
+  }, [rows]);
+
+  // Unique samples list for the left table (take the first row per SampleID)
+  const sampleSummaries = useMemo(() => {
+    const arr = [];
+    for (const [, list] of groupedBySample) {
+      arr.push(list[0]); // first row holds the sample summary fields
+    }
+    // Keep the original order (desc by SampleID due to backend ORDER BY)
+    return arr.sort((a, b) => (b.SampleID ?? 0) - (a.SampleID ?? 0));
+  }, [groupedBySample]);
+
+  // Select the first sample by default after data load
+  useEffect(() => {
+    if (!active && sampleSummaries.length > 0) {
+      setActive(sampleSummaries[0]);
+    }
+  }, [sampleSummaries, active]);
+
+  // Tests for the active sample
+  const activeTests = useMemo(() => {
+    if (!active) return [];
+    return groupedBySample.get(active.SampleID) || [];
+  }, [active, groupedBySample]);
+
   const statusTextClass = (status) => {
     if (!status) return "text-muted";
     const s = String(status).toLowerCase();
@@ -93,36 +104,6 @@ export default function SamplesDetails({
     } catch {
       return String(d);
     }
-  };
-
-  const requestNo = useMemo(() => {
-    if (!active) return null;
-    return active.RequestId ?? active.RequestID ?? active.RequestNo ?? null;
-  }, [active]);
-
-  const coordinatesTip = () => {
-    const lat =
-      active?.Latitude ?? active?.Lat ?? active?.lat ?? active?.Coordinates?.lat;
-    const lon =
-      active?.Longitude ?? active?.Lon ?? active?.lng ?? active?.Coordinates?.lng;
-    return lat != null && lon != null ? `Lat, Lon: ${lat}, ${lon}` : "No coordinates";
-  };
-
-  const assignedTip = () =>
-    active?.AssignedDate
-      ? `Assigned on: ${fmtDate(active.AssignedDate)}`
-      : "Not assigned yet";
-
-  const handleChangeCount = (e) =>
-    setUi((s) => ({ ...s, specimenCount: Number(e.target.value) || 1 }));
-
-  const handleChangeAction = (e) => {
-    const next = e.target.value;
-    setUi((s) => ({
-      ...s,
-      action: next,
-      actionDate: new Date().toISOString(),
-    }));
   };
 
   return (
@@ -190,24 +171,19 @@ export default function SamplesDetails({
                 <tr><td colSpan={4} className="text-center py-4">Loading…</td></tr>
               ) : err ? (
                 <tr><td colSpan={4} className="text-danger text-center py-4">{err}</td></tr>
-              ) : rows.length === 0 ? (
+              ) : sampleSummaries.length === 0 ? (
                 <tr><td colSpan={4} className="text-muted text-center py-4">No samples.</td></tr>
               ) : (
-                rows.map((s) => {
-                  const isActive =
-                    (active?.SampleID ?? active?.id) === (s.SampleID ?? s.id);
+                sampleSummaries.map((s) => {
+                  const isActive = (active?.SampleID ?? active?.id) === (s.SampleID ?? s.id);
                   return (
                     <tr
-                      key={s.SampleID ?? `${s.EfisProjectId}-${s.CreatedBy}`}
+                      key={s.SampleID ?? `${s.EfisProjectID}-${s.CreatedBy}`}
                       className={isActive ? "table-primary" : ""}
                       style={{ cursor: "pointer" }}
                       onClick={() => {
                         setActive(s);
-                        setUi({
-                          specimenCount: 1,
-                          action: "Record Created",
-                          actionDate: null,
-                        });
+                        setUi({ specimenCount: 1, action: "Record Created", actionDate: null });
                       }}
                       tabIndex={0}
                       onKeyDown={(e) => {
@@ -221,7 +197,7 @@ export default function SamplesDetails({
                       <td className="mono text-start">
                         <span className="linklike">{s.SampleID ?? "—"}</span>
                       </td>
-                      <td className="mono text-start">{s.EfisProjectId ?? "—"}</td>
+                      <td className="mono text-start">{s.EfisProjectID ?? "—"}</td>
                       <td className="text-start">{s.CreatedBy ?? "—"}</td>
                       <td className={`text-center ${statusTextClass(s.Status)}`}>
                         {s.Status ?? "—"}
@@ -234,7 +210,10 @@ export default function SamplesDetails({
           </table>
         </div>
 
-        <div className="debug-bar">endpoint: <code>{lastUrl}</code></div>
+        <div className="debug-bar">
+          endpoint: <code>/api/supervisor/request-samples</code>
+          {requestId ? <> | filter: <code>RequestID={String(requestId)}</code></> : null}
+        </div>
       </aside>
 
       {/* RIGHT: details */}
@@ -244,7 +223,7 @@ export default function SamplesDetails({
             <div className="text-muted">Select a sample to view its details.</div>
           ) : (
             <>
-              {/* Summary header line */}
+              {/* Summary header */}
               <div className="summary-line">
                 <div>
                   <span className="label">Sample ID:</span>
@@ -252,11 +231,11 @@ export default function SamplesDetails({
                 </div>
                 <div>
                   <span className="label">Project ID:</span>
-                  <span className="value mono">{active.EfisProjectId ?? "—"}</span>
+                  <span className="value mono">{active.EfisProjectID ?? "—"}</span>
                 </div>
                 <div>
                   <span className="label">Request No.:</span>
-                  <span className="value mono">{requestNo ?? "—"}</span>
+                  <span className="value mono">{active.RequestID ?? "—"}</span>
                 </div>
                 <div>
                   <span className="label">Submitter:</span>
@@ -272,7 +251,7 @@ export default function SamplesDetails({
                 </div>
               </div>
 
-              {/* TABLE 1: Borehole details (Size column removed) */}
+              {/* TABLE 1: Borehole / field collection details */}
               <div className="table-responsive">
                 <table className="table table-bordered table-sm mb-0">
                   <thead className="table-light">
@@ -280,30 +259,28 @@ export default function SamplesDetails({
                       <th>Borehole ID</th>
                       <th>Depth From</th>
                       <th>Depth To</th>
-                      <th>Type</th>
-                      <th>Date sampled in the field</th>
+                      <th>Container Type</th>
+                      <th>Field Collection Date</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <td title={coordinatesTip()}>
-                        {active.BoreholeID ?? active.BoreholeNumber ?? "—"}
-                      </td>
+                      <td>{active.BoreholeID ?? "—"}</td>
                       <td>{active.DepthFrom ?? "—"}</td>
                       <td>{active.DepthTo ?? "—"}</td>
-                      <td>{active.Type ?? "—"}</td>
-                      <td>{fmtDate(active.DateSampled)}</td>
+                      <td>{active.ContainerType ?? "—"}</td>
+                      <td>{fmtDate(active.FieldCollectionDate)}</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
 
-              {/* TABLE 2: Requested tests / assignment */}
+              {/* TABLE 2: Requested tests / assignment (all tests for the sample) */}
               <div className="table-responsive mt-3">
                 <table className="table table-bordered table-sm mb-0">
                   <thead className="table-light">
                     <tr>
-                      <th>Requested Tests</th>
+                      <th>Requested Test</th>
                       <th>Assigned Tester</th>
                       <th>Due Date</th>
                       <th>Number of Specimen</th>
@@ -312,48 +289,47 @@ export default function SamplesDetails({
                     </tr>
                   </thead>
                   <tbody>
-                    <tr>
-                      <td>{active.RequestedTests ?? active.TestsRequested ?? "—"}</td>
-
-                      <td title={assignedTip()}>
-                        {active.AssignedTester ?? active.Tester ?? "—"}
-                      </td>
-
-                      <td title={assignedTip()}>
-                        {fmtDate(active.DueDate ?? active.Due ?? null)}
-                      </td>
-
-                      <td title="Numbers from 1 to 5">
-                        <select
-                          className="form-select form-select-sm"
-                          value={ui.specimenCount}
-                          onChange={handleChangeCount}
-                          style={{ maxWidth: 120 }}
-                        >
-                          {[1, 2, 3, 4, 5].map((n) => (
-                            <option key={n} value={n}>{n}</option>
-                          ))}
-                        </select>
-                      </td>
-
-                      <td>
-                        <select
-                          className="form-select form-select-sm"
-                          value={ui.action}
-                          onChange={handleChangeAction}
-                          style={{ maxWidth: 170 }}
-                        >
-                          <option>Record Created</option>
-                          <option>Not Received</option>
-                          <option>Accepted</option>
-                          <option>Rejected</option>
-                        </select>
-                      </td>
-
-                      <td>
-                        {ui.actionDate ? fmtDate(ui.actionDate) : "—"}
-                      </td>
-                    </tr>
+                    {activeTests.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="text-center text-muted">No tests for this sample.</td>
+                      </tr>
+                    ) : (
+                      activeTests.map((t, idx) => (
+                        <tr key={`${active.SampleID}-${idx}`}>
+                          <td>{t.TestName ?? "—"}</td>
+                          <td>{t.AssignedTester ?? "—"}</td>
+                          <td>{fmtDate(t.ResultDueDate)}</td>
+                          <td style={{ maxWidth: 120 }}>
+                            <select
+                              className="form-select form-select-sm"
+                              value={ui.specimenCount}
+                              onChange={(e) =>
+                                setUi((s) => ({ ...s, specimenCount: Number(e.target.value) || 1 }))
+                              }
+                            >
+                              {[1, 2, 3, 4, 5].map((n) => (
+                                <option key={n} value={n}>{n}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td style={{ maxWidth: 170 }}>
+                            <select
+                              className="form-select form-select-sm"
+                              value={ui.action}
+                              onChange={(e) =>
+                                setUi((s) => ({ ...s, action: e.target.value, actionDate: new Date().toISOString() }))
+                              }
+                            >
+                              <option>Record Created</option>
+                              <option>Not Received</option>
+                              <option>Accepted</option>
+                              <option>Rejected</option>
+                            </select>
+                          </td>
+                          <td>{ui.actionDate ? fmtDate(ui.actionDate) : "—"}</td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>

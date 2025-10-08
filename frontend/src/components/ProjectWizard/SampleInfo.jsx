@@ -69,13 +69,14 @@ function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSampl
   useEffect(() => {
     if (selectedBoreholeId) {
       const boreholeSamples = samples.filter(s => s.boreholeId === selectedBoreholeId);
-      if (boreholeSamples.length > 0) {
+      if (boreholeSamples.length > 0 && !selectedSampleId) {
+        // Only auto-select if no sample is currently selected
         setSelectedSampleId(boreholeSamples[0].id);
-      } else {
+      } else if (boreholeSamples.length === 0) {
         setSelectedSampleId(null);
       }
     }
-  }, [selectedBoreholeId, samples]);
+  }, [selectedBoreholeId]); // Only run when borehole changes, not when samples change
 
   const handleAddAnotherSample = (boreholeId) => {
     const newSample = {

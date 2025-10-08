@@ -5,6 +5,8 @@ function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSampl
   const [samples, setSamples] = useState(data?.samples || []);
   // Track the currently selected borehole
   const [selectedBoreholeId, setSelectedBoreholeId] = useState(boreholes.length > 0 ? boreholes[0].boreholeId : null);
+  // Track the currently selected sample ID
+  const [selectedSampleId, setSelectedSampleId] = useState(null);
 
   // Group samples by boreholeId for rendering
   const getSamplesByBorehole = () => {
@@ -56,8 +58,24 @@ function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSampl
       if (boreholes.length > 0 && !selectedBoreholeId) {
         setSelectedBoreholeId(boreholes[0].boreholeId);
       }
+      // Set first sample as selected
+      if (initialSamples.length > 0) {
+        setSelectedSampleId(initialSamples[0].id);
+      }
     }
   }, [boreholes]); // Only run when boreholes changes
+
+  // When borehole selection changes, select the first sample of that borehole
+  useEffect(() => {
+    if (selectedBoreholeId) {
+      const boreholeSamples = samples.filter(s => s.boreholeId === selectedBoreholeId);
+      if (boreholeSamples.length > 0) {
+        setSelectedSampleId(boreholeSamples[0].id);
+      } else {
+        setSelectedSampleId(null);
+      }
+    }
+  }, [selectedBoreholeId, samples]);
 
   const handleAddAnotherSample = (boreholeId) => {
     const newSample = {
@@ -75,12 +93,24 @@ function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSampl
     const updatedSamples = [...samples, newSample];
     setSamples(updatedSamples);
     onChange({ ...data, samples: updatedSamples });
+    // Auto-select the newly added sample
+    setSelectedSampleId(newSample.id);
   };
 
   const handleDeleteSample = (sampleId) => {
     const updatedSamples = samples.filter(sample => sample.id !== sampleId);
     setSamples(updatedSamples);
     onChange({ ...data, samples: updatedSamples });
+    
+    // If we deleted the selected sample, select another one
+    if (sampleId === selectedSampleId) {
+      const boreholeSamples = updatedSamples.filter(s => s.boreholeId === selectedBoreholeId);
+      if (boreholeSamples.length > 0) {
+        setSelectedSampleId(boreholeSamples[0].id);
+      } else {
+        setSelectedSampleId(null);
+      }
+    }
   };
 
   const handleSampleChange = (sampleId, field, value) => {
@@ -159,7 +189,31 @@ function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSampl
                             No samples added yet for this borehole.
                           </div>
                         ) : (
-                          boreholeSamples.map((sample, sampleIndex) => (
+                          <div className="row">
+                            {/* Sample list column */}
+                            <div className="col-md-3 border-end">
+                              <h6 className="mb-3">Samples</h6>
+                              <div className="list-group">
+                                {boreholeSamples.map((sample, sampleIndex) => (
+                                  <button
+                                    key={sample.id}
+                                    type="button"
+                                    className={`list-group-item list-group-item-action ${selectedSampleId === sample.id ? 'active' : ''}`}
+                                    onClick={() => setSelectedSampleId(sample.id)}
+                                  >
+                                    Sample {sampleIndex + 1}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            
+                            {/* Sample form area */}
+                            <div className="col-md-9">
+                              {selectedSampleId && boreholeSamples.find(s => s.id === selectedSampleId) && (() => {
+                                const sample = boreholeSamples.find(s => s.id === selectedSampleId);
+                                const sampleIndex = boreholeSamples.findIndex(s => s.id === selectedSampleId);
+                                
+                                return (
                             <div key={sample.id} className="mb-4 pb-3" style={{ borderBottom: sampleIndex < boreholeSamples.length - 1 ? '1px dashed #dee2e6' : 'none' }}>
                               <div className="d-flex justify-content-between align-items-center mb-3">
                                 <h6 className="mb-0">Sample {sampleIndex + 1}</h6>
@@ -257,7 +311,10 @@ function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSampl
                                 </div>
                               </div>
                             </div>
-                          ))
+                                );
+                              })()}
+                            </div>
+                          </div>
                         )}
 
                         {/* Add another sample button for this borehole */}

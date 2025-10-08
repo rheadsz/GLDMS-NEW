@@ -1,27 +1,18 @@
 const nodemailer = require('nodemailer');
 
 // Email credentials
-const emailUser = 'gldmsproject@outlook.com';
-// New App password provided by user
-const emailPass = 'ouaxijjavwgkudsr';
+const emailUser = 'rheadsouzacodes@gmail.com';
+const emailPass = 'pmczzvkgrwwpkpoo';
 
-// Create a real Outlook transporter with settings from Medium article
-const createOutlookTransporter = () => {
-  console.log('Creating Outlook transporter for', emailUser);
+// Create a Gmail transporter
+const createGmailTransporter = () => {
+  console.log('Creating Gmail transporter for', emailUser);
   
-  // Configuration exactly as specified in the 2024 Medium article
   return nodemailer.createTransport({
-    service: 'outlook',  // Use built-in 'outlook' service config
+    service: 'gmail',
     auth: {
       user: emailUser,
       pass: emailPass
-    },
-    host: 'smtp.office365.com',  // Adding host explicitly
-    secureConnection: false,     // TLS requires this
-    port: 587,                   // Using port 587 as recommended
-    tls: {
-      ciphers: 'SSLv3',         // Use this specific cipher as mentioned
-      rejectUnauthorized: false  // Don't fail on invalid certs
     },
     logger: true,
     debug: true
@@ -47,16 +38,15 @@ const createMockTransporter = () => {
   };
 };
 
-// Trying Medium article solution with new configuration
-// Setting USE_REAL_EMAIL to true to test the Medium article approach
+// Set to true to use real Gmail, false to use mock (for testing)
 const USE_REAL_EMAIL = true;
 
 // Initialize the appropriate transporter
 let transporter;
 
 if (USE_REAL_EMAIL) {
-  transporter = createOutlookTransporter();
-  console.log('Email service initialized with REAL Outlook transporter');
+  transporter = createGmailTransporter();
+  console.log('Email service initialized with REAL Gmail transporter');
   
   // Test SMTP connection
   transporter.verify(function(error, success) {
@@ -157,7 +147,7 @@ const sendSampleSubmissionEmail = async (projectData, samples) => {
 
     // Email options
     const mailOptions = {
-      from: process.env.EMAIL_USER || 'gldmsproject@outlook.com',
+      from: emailUser,
       to: 'Rhea.Dsouza@dot.ca.gov',
       subject: 'Samples submitted to GLDMS',
       html: `

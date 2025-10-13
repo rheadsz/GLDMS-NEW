@@ -7,6 +7,7 @@ module.exports = function requestSamplesRouter(db) {
   // ------------------------------------------
   // GET /api/supervisor/request-samples
   // Include TestID, TestStatus, NumberOfSpecimen so the UI can edit & submit
+  // (No need to return DateAssigned for current UI)
   // ------------------------------------------
   router.get("/request-samples", (_req, res) => {
     const sql = `
@@ -51,8 +52,8 @@ module.exports = function requestSamplesRouter(db) {
 
   // ------------------------------------------
   // POST /api/supervisor/request-samples/update-tests
-  // Body: { updates: [{ TestID, TestStatus (or null), NumberOfSpecimen (or null) }, ...] }
-  // Saves to project_tests
+  // Body: { updates: [{ TestID, TestStatus|null, NumberOfSpecimen|null, DateAssigned|null('YYYY-MM-DD') }, ...] }
+  // Saves to project_tests (writes DateAssigned if provided)
   // ------------------------------------------
   router.post("/request-samples/update-tests", (req, res) => {
     const { updates } = req.body || {};
@@ -60,38 +61,41 @@ module.exports = function requestSamplesRouter(db) {
       return res.status(400).json({ error: "No updates provided." });
     }
 
-    // Validate payload a bit
     for (const u of updates) {
-      if (!u || typeof u.TestID === "undefined" || u.TestID === null) {
+      if (!u || u.TestID == null) {
         return res.status(400).json({ error: "Each update must include TestID." });
       }
-      // Allow NULLs for both fields, enforce enum set on server side if needed.
+      if (typeof u.DateAssigned === "string" && u.DateAssigned.trim() === "") {
+        u.DateAssigned = null;
+      }
+      if (u.DateAssigned != null && !/^\d{4}-\d{2}-\d{2}$/.test(u.DateAssigned)) {
+        return res.status(400).json({ error: "DateAssigned must be YYYY-MM-DD or null." });
+      }
     }
 
     const sql = `
       UPDATE project_tests
-      SET TestStatus = ?, NumberOfSpecimen = ?
+      SET TestStatus = ?, NumberOfSpecimen = ?, DateAssigned = ?
       WHERE TestID = ?;
     `;
 
-    // Run sequentially to keep it simple & safe with MySQL connections
     const runUpdate = (u) =>
       new Promise((resolve, reject) => {
         db.query(
           sql,
-          [u.TestStatus ?? null, typeof u.NumberOfSpecimen === "number" ? u.NumberOfSpecimen : null, u.TestID],
-          (err, result) => {
-            if (err) return reject(err);
-            resolve(result);
-          }
+          [
+            u.TestStatus ?? null,
+            typeof u.NumberOfSpecimen === "number" ? u.NumberOfSpecimen : null,
+            u.DateAssigned ?? null, // DATE column
+            u.TestID,
+          ],
+          (err, result) => (err ? reject(err) : resolve(result))
         );
       });
 
     (async () => {
       try {
-        for (const u of updates) {
-          await runUpdate(u);
-        }
+        for (const u of updates) await runUpdate(u);
         res.json({ ok: true, count: updates.length });
       } catch (e) {
         console.error("[ERR] POST /api/supervisor/request-samples/update-tests:", e.message);

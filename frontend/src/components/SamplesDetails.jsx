@@ -111,7 +111,18 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     }
   };
 
-  // Save all tests in the active sample
+  // Helper: convert a JS date/ISO to local YYYY-MM-DD for backend
+  const toYMDLocal = (v) => {
+    if (!v) return null;
+    const d = new Date(v);
+    if (Number.isNaN(+d)) return null;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
+  // Save all tests in the active sample (now also sends DateAssigned)
   const saveActiveSample = async () => {
     if (!active) return;
 
@@ -124,6 +135,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
           TestStatus: u.action ?? null,
           NumberOfSpecimen:
             typeof u.specimenCount === "number" ? u.specimenCount : null,
+          DateAssigned: toYMDLocal(u.actionDate), // 'YYYY-MM-DD' or null
         };
       })
       .filter((u) => typeof u.TestID !== "undefined" && u.TestID !== null);

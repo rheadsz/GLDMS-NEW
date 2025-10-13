@@ -4,15 +4,10 @@ const express = require("express");
 module.exports = function requestSamplesRouter(db) {
   const router = express.Router();
 
-  // ==========================================
+  // ------------------------------------------
   // GET /api/supervisor/request-samples
-  // Returns (one row per test; samples without tests still appear):
-  //  - From project_samples: SampleID, RequestID, SampleStatus, BoreholeID, DepthFrom, DepthTo, ContainerType, FieldCollectionDate
-  //  - From project: EfisProjectID
-  //  - From project_requests: RequestingUser
-  //  - From project_tests: AssignedTester, ResultDueDate
-  //  - From test_type: TestName
-  // ==========================================
+  // Include TestID, TestStatus, NumberOfSpecimen so the UI can edit & submit
+  // ------------------------------------------
   router.get("/request-samples", (_req, res) => {
     const sql = `
       SELECT
@@ -27,8 +22,11 @@ module.exports = function requestSamplesRouter(db) {
         p.EfisProjectID,
         pr.RequestingUser AS CreatedBy,
         tt.TestName,
+        pt.TestID,
         pt.AssignedTester,
-        pt.ResultDueDate
+        pt.ResultDueDate,
+        pt.TestStatus,
+        pt.NumberOfSpecimen
       FROM project_samples AS ps
       JOIN project_requests AS pr
         ON pr.RequestID = ps.RequestID
@@ -49,6 +47,57 @@ module.exports = function requestSamplesRouter(db) {
       console.log(`[REQ] GET /api/supervisor/request-samples → ${rows.length} rows`);
       res.json(rows || []);
     });
+  });
+
+  // ------------------------------------------
+  // POST /api/supervisor/request-samples/update-tests
+  // Body: { updates: [{ TestID, TestStatus (or null), NumberOfSpecimen (or null) }, ...] }
+  // Saves to project_tests
+  // ------------------------------------------
+  router.post("/request-samples/update-tests", (req, res) => {
+    const { updates } = req.body || {};
+    if (!Array.isArray(updates) || updates.length === 0) {
+      return res.status(400).json({ error: "No updates provided." });
+    }
+
+    // Validate payload a bit
+    for (const u of updates) {
+      if (!u || typeof u.TestID === "undefined" || u.TestID === null) {
+        return res.status(400).json({ error: "Each update must include TestID." });
+      }
+      // Allow NULLs for both fields, enforce enum set on server side if needed.
+    }
+
+    const sql = `
+      UPDATE project_tests
+      SET TestStatus = ?, NumberOfSpecimen = ?
+      WHERE TestID = ?;
+    `;
+
+    // Run sequentially to keep it simple & safe with MySQL connections
+    const runUpdate = (u) =>
+      new Promise((resolve, reject) => {
+        db.query(
+          sql,
+          [u.TestStatus ?? null, typeof u.NumberOfSpecimen === "number" ? u.NumberOfSpecimen : null, u.TestID],
+          (err, result) => {
+            if (err) return reject(err);
+            resolve(result);
+          }
+        );
+      });
+
+    (async () => {
+      try {
+        for (const u of updates) {
+          await runUpdate(u);
+        }
+        res.json({ ok: true, count: updates.length });
+      } catch (e) {
+        console.error("[ERR] POST /api/supervisor/request-samples/update-tests:", e.message);
+        res.status(500).json({ error: "Failed to save updates." });
+      }
+    })();
   });
 
   return router;

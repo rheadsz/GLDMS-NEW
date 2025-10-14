@@ -127,11 +127,35 @@ function TestsInfo({ data, onChange }) {
       // For now, we'll need to access it from the parent component
       console.log('Data available in TestsInfo:', data);
       
+      // Convert testAssignments to testRows format for PDF generation
+      const testRows = [];
+      Object.entries(testAssignments).forEach(([sampleId, tests]) => {
+        if (tests && tests.length > 0) {
+          // Find the sample to get its details
+          const sample = samples.find(s => s.id === sampleId);
+          if (sample) {
+            // Find the borehole for this sample
+            const borehole = boreholes.find(b => b.boreholeId === sample.boreholeId);
+            if (borehole) {
+              // Find the structure for this borehole
+              const structure = structures.find(s => s.id === borehole.structureId);
+              
+              testRows.push({
+                id: sampleId,
+                structure: structure?.id || '',
+                boreholeSample: `${sample.boreholeId} - ${sample.depthFrom}-${sample.depthTo}`,
+                tests: tests
+              });
+            }
+          }
+        }
+      });
+      
       // Prepare the data to send to backend
       const requestData = {
         testRows: testRows,
         projectInfo: data.projectInfo || {},
-        boreholes: data.boreholes || [],
+        boreholes: boreholes || [],
         samples: samples
       };
       

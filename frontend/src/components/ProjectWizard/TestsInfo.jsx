@@ -2,44 +2,27 @@ import React, { useState } from "react";
 import axios from "axios";
 
 function TestsInfo({ data, onChange }) {
-  // Extract data from props
+  // Extract data from props (data is already flattened in CreateProjectWizard)
   const structures = data?.structures || [];
+  const boreholes = data?.boreholes || [];
   const samples = data?.samples || [];
   
-  // Check if there's only one structure
-  const hasSingleStructure = structures.length === 1;
+  // State for tree expansion
+  const [expandedStructures, setExpandedStructures] = useState(new Set());
+  const [expandedBoreholes, setExpandedBoreholes] = useState(new Set());
   
-  // Generate borehole-sample options from samples data
-  const boreholeSampleOptions = [];
+  // State for selected samples (multiple selection)
+  const [selectedSamples, setSelectedSamples] = useState(new Set());
   
-  samples.forEach(sample => {
-    if (sample && sample.boreholeId && (sample.depthFrom || sample.depthTo)) {
-      // Create a display string with borehole ID and depth
-      const depthDisplay = sample.depthFrom && sample.depthTo
-        ? `${sample.depthFrom}-${sample.depthTo}`
-        : sample.depthFrom || sample.depthTo;
-      
-      boreholeSampleOptions.push(`${sample.boreholeId} - ${depthDisplay}`);
-    }
-  });
+  // State for test assignments: { sampleId: [testNames] }
+  const initialTestAssignments = data?.testAssignments || {};
+  const [testAssignments, setTestAssignments] = useState(initialTestAssignments);
   
-  // Check if there's only one borehole-sample option
-  const hasSingleBoreholeSample = boreholeSampleOptions.length === 1;
-  
-  // Initialize test rows with structure and boreholeSample values if there's only one of each
-  const initialTestRows = data?.testRows || [{
-    id: Date.now().toString(),
-    structure: hasSingleStructure ? (structures[0]?.id || '') : '',
-    boreholeSample: hasSingleBoreholeSample ? (boreholeSampleOptions[0] || '') : '',
-    tests: []
-  }];
-  
-  const [testRows, setTestRows] = useState(initialTestRows);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
-  // Check if any test row has Sand Equivalent or Corrosion
-  const hasRelevantTests = testRows.some(row => 
-    row.tests && (row.tests.includes('Sand Equivalent') || row.tests.includes('Corrosion'))
+  // Check if any sample has Sand Equivalent or Corrosion tests assigned
+  const hasRelevantTests = Object.values(testAssignments).some(tests => 
+    tests && (tests.includes('Sand Equivalent') || tests.includes('Corrosion'))
   );
 
   // Test options
@@ -67,64 +50,73 @@ function TestsInfo({ data, onChange }) {
     'Corrosion'
   ];
 
-  const handleAddRow = () => {
-    const newRow = {
-      id: Date.now().toString(),
-      // If there's only one structure, automatically set the structure value
-      structure: hasSingleStructure ? (structures[0]?.id || '') : '',
-      // If there's only one borehole-sample, automatically set the boreholeSample value
-      boreholeSample: hasSingleBoreholeSample ? (boreholeSampleOptions[0] || '') : '',
-      tests: []
-    };
-    
-    const updatedRows = [...testRows, newRow];
-    setTestRows(updatedRows);
-    onChange({ 
-      ...data, 
-      testRows: updatedRows,
-      // Don't include these in the onChange as they're passed from parent
-      structures: undefined,
-      samples: undefined
-    });
+  // Toggle structure expansion
+  const toggleStructure = (structureId) => {
+    const newExpanded = new Set(expandedStructures);
+    if (newExpanded.has(structureId)) {
+      newExpanded.delete(structureId);
+    } else {
+      newExpanded.add(structureId);
+    }
+    setExpandedStructures(newExpanded);
   };
 
-  const handleDeleteRow = (rowId) => {
-    const updatedRows = testRows.filter(row => row.id !== rowId);
-    setTestRows(updatedRows);
-    onChange({ 
-      ...data, 
-      testRows: updatedRows,
-      // Don't include these in the onChange as they're passed from parent
-      structures: undefined,
-      samples: undefined
-    });
+  // Toggle borehole expansion
+  const toggleBorehole = (boreholeId) => {
+    const newExpanded = new Set(expandedBoreholes);
+    if (newExpanded.has(boreholeId)) {
+      newExpanded.delete(boreholeId);
+    } else {
+      newExpanded.add(boreholeId);
+    }
+    setExpandedBoreholes(newExpanded);
   };
 
-  const handleRowChange = (rowId, field, value) => {
-    const updatedRows = testRows.map(row => {
-      if (row.id === rowId) {
-        // If there's only one structure, automatically set the structure value
-        if (hasSingleStructure && field === 'structure') {
-          return { ...row, structure: structures[0]?.structureId || '' };
-        }
-        // If there's only one borehole-sample, automatically set the boreholeSample value
-        if (hasSingleBoreholeSample && field === 'boreholeSample') {
-          return { ...row, boreholeSample: boreholeSampleOptions[0] || '' };
-        }
-        return { ...row, [field]: value };
-      }
-      return row;
-    });
+  // Toggle sample selection
+  const toggleSampleSelection = (sampleId) => {
+    const newSelected = new Set(selectedSamples);
+    if (newSelected.has(sampleId)) {
+      newSelected.delete(sampleId);
+    } else {
+      newSelected.add(sampleId);
+    }
+    setSelectedSamples(newSelected);
+  };
+
+  // Get boreholes for a structure
+  const getBoreholesByStructure = (structureId) => {
+    return boreholes.filter(b => b.structureId === structureId);
+  };
+
+  // Get samples for a borehole
+  const getSamplesByBorehole = (boreholeInternalId) => {
+    // Find the borehole to get its boreholeId (user-entered identifier)
+    const borehole = boreholes.find(b => b.id === boreholeInternalId);
+    if (!borehole) return [];
     
-    setTestRows(updatedRows);
-    // Preserve structures and samples data when updating
-    onChange({ 
-      ...data, 
-      testRows: updatedRows,
-      // Don't include these in the onChange as they're passed from parent
-      structures: undefined,
-      samples: undefined
-    });
+    // Samples store boreholeId as the user-entered identifier (e.g., "BH-001")
+    return samples.filter(s => s.boreholeId === borehole.boreholeId);
+  };
+
+  // Get structure name
+  const getStructureName = (structure) => {
+    if (structure.structureNo) {
+      return `${structure.projectComponent} (${structure.structureNo})`;
+    }
+    return structure.projectComponent || 'Unknown Structure';
+  };
+
+  // Get borehole name
+  const getBoreholeName = (borehole) => {
+    return borehole.boreholeId || 'Unknown Borehole';
+  };
+
+  // Get sample name
+  const getSampleName = (sample) => {
+    const depthDisplay = sample.depthFrom && sample.depthTo
+      ? `${sample.depthFrom}-${sample.depthTo} ft`
+      : sample.depthFrom || sample.depthTo || 'Unknown depth';
+    return `${sample.sampleId || 'Sample'} (${depthDisplay})`;
   };
   
   // Handle PDF generation
@@ -179,158 +171,212 @@ function TestsInfo({ data, onChange }) {
     }
   };
 
-  // Handle toggling tests on and off
-  const handleTestToggle = (rowId, testName) => {
-    const updatedRows = testRows.map(row => {
-      if (row.id === rowId) {
-        const currentTests = [...(row.tests || [])];
-        const testIndex = currentTests.indexOf(testName);
-        
-        // If test is already selected, remove it; otherwise add it
-        if (testIndex !== -1) {
-          currentTests.splice(testIndex, 1);
-        } else {
-          currentTests.push(testName);
-        }
-        
-        return { ...row, tests: currentTests };
+  // Handle test toggle for selected samples
+  const handleTestToggle = (testName) => {
+    if (selectedSamples.size === 0) return;
+
+    const updatedAssignments = { ...testAssignments };
+    
+    // Toggle test for all selected samples
+    selectedSamples.forEach(sampleId => {
+      const currentTests = updatedAssignments[sampleId] || [];
+      const testIndex = currentTests.indexOf(testName);
+      
+      if (testIndex !== -1) {
+        // Remove test
+        updatedAssignments[sampleId] = currentTests.filter(t => t !== testName);
+      } else {
+        // Add test
+        updatedAssignments[sampleId] = [...currentTests, testName];
       }
-      return row;
     });
     
-    setTestRows(updatedRows);
+    setTestAssignments(updatedAssignments);
     onChange({ 
-      ...data, 
-      testRows: updatedRows,
-      // Don't include these in the onChange as they're passed from parent
-      structures: undefined,
-      samples: undefined
+      ...data,
+      testAssignments: updatedAssignments
+    });
+  };
+
+  // Check if a test is selected for any of the selected samples
+  const isTestChecked = (testName) => {
+    if (selectedSamples.size === 0) return false;
+    
+    // Check if ALL selected samples have this test
+    return Array.from(selectedSamples).every(sampleId => {
+      const tests = testAssignments[sampleId] || [];
+      return tests.includes(testName);
     });
   };
 
   return (
     <div className="card mb-3">
+      <style>
+        {`
+          .form-control,
+          .form-select,
+          .form-check-input {
+            border-color: #495057 !important;
+            border-width: 2px !important;
+          }
+          .form-control:focus,
+          .form-select:focus,
+          .form-check-input:focus {
+            border-color: #212529 !important;
+            border-width: 2px !important;
+            box-shadow: 0 0 0 0.2rem rgba(33, 37, 41, 0.25) !important;
+          }
+        `}
+      </style>
       <div className="card-header bg-light fw-bold d-flex justify-content-between align-items-center">
         <span>Tests</span>
+        {selectedSamples.size > 0 && (
+          <small className="text-muted">
+            {selectedSamples.size} sample{selectedSamples.size > 1 ? 's' : ''} selected
+          </small>
+        )}
       </div>
       <div className="card-body pb-2">
-        <div className="table-responsive mb-3">
-          <table className="table table-bordered">
-            <thead className="table-light">
-              <tr>
-                <th style={{ width: '20%' }}>Structure</th>
-                <th style={{ width: '50%' }}>Tests</th>
-                <th style={{ width: '20%' }}>Borehole-Samples</th>
-                <th style={{ width: '10%' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {testRows.map((row) => (
-                <tr key={row.id}>
-                  <td>
-                    {hasSingleStructure ? (
-                      // If there's only one structure, show a text input with structure info
-                      <input 
-                        type="text" 
-                        className="form-control form-control-sm" 
-                        value={
-                          structures[0] ? (
-                            `${structures[0].projectComponent || ''} ${structures[0].structureNo ? '- ' + structures[0].structureNo : ''}`
-                          ) : ''
-                        }
-                        readOnly
-                      />
-                    ) : (
-                      // If there are multiple structures, show a dropdown
-                      <select 
-                        className="form-select form-select-sm" 
-                        value={row.structure || ''}
-                        onChange={(e) => handleRowChange(row.id, 'structure', e.target.value)}
-                      >
-                        <option value="">Select Structure</option>
-                        {structures.map((structure) => (
-                          <option key={structure.id} value={structure.id}>
-                            {structure.projectComponent ? structure.projectComponent : ''}
-                            {structure.projectComponent && structure.structureNo ? ' - ' : ''}
-                            {structure.structureNo ? structure.structureNo : ''}
-                            {!structure.projectComponent && !structure.structureNo ? (structure.id || 'Unknown Structure') : ''}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </td>
-                  <td>
-                    <div className="test-checkboxes" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+        
+        {structures.length === 0 ? (
+          <div className="alert alert-warning">
+            <i className="bi bi-exclamation-triangle me-2"></i>
+            Please add structures, boreholes, and samples in the previous steps before assigning tests.
+          </div>
+        ) : (
+          <div className="row">
+            {/* Left Column: Tree Structure */}
+            <div className="col-md-6">
+              <div className="card">
+                <div className="card-header bg-light">
+                  <strong>Select Project Component (Structure Number)</strong>
+                </div>
+                <div className="card-body" style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                  {structures.map(structure => {
+                    const structureBoreholes = getBoreholesByStructure(structure.id);
+                    const isStructureExpanded = expandedStructures.has(structure.id);
+                    
+                    return (
+                      <div key={structure.id} className="mb-2">
+                        {/* Structure Level */}
+                        <div 
+                          className="d-flex align-items-center p-2 border rounded bg-light"
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => toggleStructure(structure.id)}
+                        >
+                          <i className={`bi bi-chevron-${isStructureExpanded ? 'down' : 'right'} me-2`}></i>
+                          <span className="me-2 fw-bold">Structure:</span>
+                          <strong>{getStructureName(structure)}</strong>
+                          <span className="ms-2 badge bg-secondary">{structureBoreholes.length}</span>
+                        </div>
+                        
+                        {/* Boreholes (shown when structure is expanded) */}
+                        {isStructureExpanded && (
+                          <div className="ms-4 mt-2">
+                            {structureBoreholes.length === 0 ? (
+                              <div className="text-muted small">No boreholes for this structure</div>
+                            ) : (
+                              structureBoreholes.map(borehole => {
+                                const boreholeSamples = getSamplesByBorehole(borehole.id);
+                                const isBoreholeExpanded = expandedBoreholes.has(borehole.id);
+                                
+                                return (
+                                  <div key={borehole.id} className="mb-2">
+                                    {/* Borehole Level */}
+                                    <div 
+                                      className="d-flex align-items-center p-2 border rounded"
+                                      style={{ cursor: 'pointer', backgroundColor: '#f8f9fa' }}
+                                      onClick={() => toggleBorehole(borehole.id)}
+                                    >
+                                      <i className={`bi bi-chevron-${isBoreholeExpanded ? 'down' : 'right'} me-2`}></i>
+                                      <span className="me-2 fw-bold">Borehole:</span>
+                                      <span>{getBoreholeName(borehole)}</span>
+                                      <span className="ms-2 badge bg-info">{boreholeSamples.length}</span>
+                                    </div>
+                                    
+                                    {/* Samples (shown when borehole is expanded) */}
+                                    {isBoreholeExpanded && (
+                                      <div className="ms-4 mt-2">
+                                        {boreholeSamples.length === 0 ? (
+                                          <div className="text-muted small">No samples for this borehole</div>
+                                        ) : (
+                                          boreholeSamples.map(sample => {
+                                            const isSelected = selectedSamples.has(sample.id);
+                                            
+                                            return (
+                                              <div 
+                                                key={sample.id} 
+                                                className={`d-flex align-items-center p-2 border rounded mb-1 ${isSelected ? 'bg-primary text-white' : ''}`}
+                                                style={{ cursor: 'pointer' }}
+                                                onClick={() => toggleSampleSelection(sample.id)}
+                                              >
+                                                <input
+                                                  type="checkbox"
+                                                  className="form-check-input me-2"
+                                                  checked={isSelected}
+                                                  onChange={() => {}}
+                                                  onClick={(e) => e.stopPropagation()}
+                                                />
+                                                <span className="me-2 fw-bold">Sample:</span>
+                                                <span>{getSampleName(sample)}</span>
+                                              </div>
+                                            );
+                                          })
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            
+            {/* Right Column: Test Selection */}
+            <div className="col-md-6">
+              <div className="card">
+                <div className="card-header bg-light">
+                  <strong>Available Tests</strong>
+                </div>
+                <div className="card-body" style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                  {selectedSamples.size === 0 ? (
+                    <div className="text-muted text-center py-5">
+                      <i className="bi bi-arrow-left me-2"></i>
+                      Select one or more samples from the left to assign tests
+                    </div>
+                  ) : (
+                    <div>
                       {testOptions.map((testName, index) => (
-                        <div key={index} className="form-check">
+                        <div key={index} className="form-check mb-2">
                           <input
                             className="form-check-input"
                             type="checkbox"
-                            id={`test-${row.id}-${index}`}
-                            checked={row.tests?.includes(testName) || false}
-                            onChange={() => handleTestToggle(row.id, testName)}
+                            id={`test-${index}`}
+                            checked={isTestChecked(testName)}
+                            onChange={() => handleTestToggle(testName)}
                           />
-                          <label className="form-check-label" htmlFor={`test-${row.id}-${index}`}>
+                          <label className="form-check-label" htmlFor={`test-${index}`}>
                             {testName}
                           </label>
                         </div>
                       ))}
                     </div>
-                  </td>
-                  <td>
-                    {hasSingleBoreholeSample ? (
-                      // If there's only one borehole-sample, show a text input with that value
-                      <input 
-                        type="text" 
-                        className="form-control form-control-sm" 
-                        value={boreholeSampleOptions[0] || ''}
-                        readOnly
-                      />
-                    ) : (
-                      // If there are multiple borehole-samples, show a dropdown
-                      <select 
-                        className="form-select form-select-sm" 
-                        value={row.boreholeSample || ''}
-                        onChange={(e) => handleRowChange(row.id, 'boreholeSample', e.target.value)}
-                      >
-                        <option value="">Select Borehole-Sample</option>
-                        {boreholeSampleOptions.length > 0 ? (
-                          boreholeSampleOptions.map((option, index) => (
-                            <option key={index} value={option}>{option}</option>
-                          ))
-                        ) : (
-                          <option value="" disabled>No boreholes available</option>
-                        )}
-                      </select>
-                    )}
-                  </td>
-                  <td className="text-center">
-                    {testRows.length > 1 && (
-                      <button
-                        type="button"
-                        className="btn btn-outline-danger btn-sm"
-                        onClick={() => handleDeleteRow(row.id)}
-                      >
-                        <i className="bi bi-trash"></i>
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         
-        <div className="d-flex justify-content-center gap-2 mt-3">
-          <button 
-            type="button" 
-            className="btn btn-success" 
-            onClick={handleAddRow}
-          >
-            <i className="bi bi-plus-circle me-1"></i> Add new row
-          </button>
-          
-          {hasRelevantTests && (
+        {/* Generate PDF Button */}
+        {hasRelevantTests && (
+          <div className="d-flex justify-content-center mt-3">
             <button 
               type="button" 
               className="btn btn-primary" 
@@ -348,8 +394,8 @@ function TestsInfo({ data, onChange }) {
                 </>
               )}
             </button>
-          )}
-        </div>
+          </div>
+        )}
         
         {/* Navigation buttons */}
         <div className="row mt-4">
@@ -359,11 +405,8 @@ function TestsInfo({ data, onChange }) {
               className="btn btn-secondary" 
               onClick={() => onChange({ 
                 ...data, 
-                testRows: testRows, 
-                _prevStep: true,
-                // Don't include these in the onChange as they're passed from parent
-                structures: undefined,
-                samples: undefined
+                testAssignments: testAssignments,
+                _prevStep: true
               })}
             >
               <i className="bi bi-arrow-left me-1"></i> Previous

@@ -42,6 +42,69 @@ router.get('/check-table', async (req, res) => {
   }
 });
 
+/**
+ * @route   GET /api/visiondb/search-projects
+ * @desc    Search for projects by partial project ID
+ * @access  Private
+ */
+router.get('/search-projects', async (req, res) => {
+  try {
+    const { q } = req.query;
+    
+    console.log(`Searching projects with query: ${q}`);
+    
+    // Validate query parameter
+    if (!q || q.trim().length < 2) {
+      return res.status(400).json({ message: 'Search query must be at least 2 characters' });
+    }
+    
+    // Get connection from pool
+    const connection = await pool.getConnection();
+    
+    try {
+      // Check if the visiondb table exists
+      const [tables] = await connection.query(
+        "SHOW TABLES LIKE 'visiondb'"
+      );
+      
+      if (tables.length === 0) {
+        connection.release();
+        return res.status(404).json({ message: 'visiondb table does not exist in the database' });
+      }
+      
+      // Search for projects that start with the query string
+      const [rows] = await connection.query(
+        `SELECT 
+          EfisProjectId as ProjectID,
+          ProjectName,
+          ProjectEa,
+          District
+        FROM visiondb 
+        WHERE EfisProjectId LIKE ?
+        ORDER BY EfisProjectId
+        LIMIT 10`,
+        [`${q}%`]
+      );
+      
+      console.log(`Search query executed, found ${rows.length} results`);
+      
+      // Release the connection back to the pool
+      connection.release();
+      
+      // Return the search results
+      return res.json(rows);
+    } catch (error) {
+      // Release the connection back to the pool in case of error
+      connection.release();
+      console.error('Database query error:', error);
+      throw error;
+    }
+  } catch (error) {
+    console.error('Error searching projects:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 router.get('/project/:projectId', async (req, res) => {
   try {
     const { projectId } = req.params;

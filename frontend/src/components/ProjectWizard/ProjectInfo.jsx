@@ -4,6 +4,12 @@ import axios from "axios";
 function ProjectInfo({ data, onChange }) {
   const [error, setError] = useState(null);
   const [structures, setStructures] = useState(data.structures || []);
+  const [projectSuggestions, setProjectSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const inputRef = useRef(null);
+  const suggestionsRef = useRef(null);
+  const searchTimeoutRef = useRef(null);
 
   // Function to fetch project data from visiondb
   const fetchProjectData = useCallback(async (projectId) => {
@@ -41,6 +47,31 @@ function ProjectInfo({ data, onChange }) {
     }
   }, [onChange]);
 
+  // Function to search for project IDs
+  const searchProjectIds = useCallback(async (searchTerm) => {
+    if (!searchTerm || searchTerm.trim().length < 2) {
+      setProjectSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    
+    console.log('Searching for projects with term:', searchTerm);
+    setIsSearching(true);
+    try {
+      const response = await axios.get(`/api/visiondb/search-projects?q=${encodeURIComponent(searchTerm)}`);
+      console.log('Search response:', response.data);
+      setProjectSuggestions(response.data || []);
+      setShowSuggestions(true);
+    } catch (err) {
+      console.error('Error searching projects:', err);
+      console.error('Error details:', err.response?.data);
+      setProjectSuggestions([]);
+      setShowSuggestions(false);
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
   // Create a ref to track the previous projectID
   const prevProjectIdRef = useRef('');
   
@@ -56,21 +87,135 @@ function ProjectInfo({ data, onChange }) {
     }
   }, [data.projectID, fetchProjectData]);
 
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (suggestionsRef.current && !suggestionsRef.current.contains(event.target) &&
+          inputRef.current && !inputRef.current.contains(event.target)) {
+        setShowSuggestions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Handle project ID input change with debounce
+  const handleProjectIdChange = (value) => {
+    onChange({ ...data, projectID: value });
+    
+    // Clear existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    // Set new timeout for search (300ms delay)
+    searchTimeoutRef.current = setTimeout(() => {
+      searchProjectIds(value);
+    }, 300);
+  };
+
+  // Handle selecting a suggestion
+  const handleSelectSuggestion = (projectId) => {
+    onChange({ ...data, projectID: projectId });
+    setShowSuggestions(false);
+    setProjectSuggestions([]);
+    fetchProjectData(projectId);
+  };
+
   return (
     <div className="card mb-3">
+      <style>
+        {`
+          .form-control,
+          .form-select,
+          .form-check-input {
+            border-color: #495057 !important;
+            border-width: 2px !important;
+          }
+          .form-control:focus,
+          .form-select:focus,
+          .form-check-input:focus {
+            border-color: #212529 !important;
+            border-width: 2px !important;
+            box-shadow: 0 0 0 0.2rem rgba(33, 37, 41, 0.25) !important;
+          }
+          .autocomplete-suggestions {
+            position: absolute;
+            z-index: 1000;
+            background: white;
+            border: 2px solid #495057;
+            border-top: none;
+            max-height: 200px;
+            overflow-y: auto;
+            width: 100%;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+          }
+          .autocomplete-suggestion {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #e9ecef;
+          }
+          .autocomplete-suggestion:hover {
+            background-color: #e9ecef;
+          }
+          .autocomplete-suggestion:last-child {
+            border-bottom: none;
+          }
+        `}
+      </style>
       <div className="card-header bg-light fw-bold">PROJECT INFORMATION</div>
       <div className="card-body pb-2">
         {/* First row - Project ID */}
         <div className="row mb-2">
-          <div className="col-md-4 mb-2">
+          <div className="col-md-4 mb-2" style={{ position: 'relative' }}>
             <label className="form-label">Project ID (EFIS):</label>
             <input 
+              ref={inputRef}
               type="text" 
               className="form-control form-control-sm" 
               value={data.projectID || ""} 
-              onChange={e => onChange({ ...data, projectID: e.target.value })} 
-              placeholder="Enter Project ID to auto-fill fields"
+              onChange={e => {
+                console.log('Input changed:', e.target.value);
+                handleProjectIdChange(e.target.value);
+              }}
+              onFocus={() => {
+                console.log('Input focused, suggestions:', projectSuggestions.length);
+                if (projectSuggestions.length > 0) {
+                  setShowSuggestions(true);
+                }
+              }}
+              placeholder="Start typing to search..."
+              autoComplete="off"
             />
+            {isSearching && (
+              <div className="small text-muted mt-1">
+                <span className="spinner-border spinner-border-sm me-1"></span>
+                Searching...
+              </div>
+            )}
+            {showSuggestions && projectSuggestions.length > 0 && (
+              <div ref={suggestionsRef} className="autocomplete-suggestions">
+                {projectSuggestions.map((project, index) => (
+                  <div
+                    key={index}
+                    className="autocomplete-suggestion"
+                    onClick={() => {
+                      console.log('Suggestion clicked:', project.ProjectID);
+                      handleSelectSuggestion(project.ProjectID);
+                    }}
+                  >
+                    <div className="fw-bold">{project.ProjectID}</div>
+                    {project.ProjectName && (
+                      <div className="small text-muted">{project.ProjectName}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {!isSearching && data.projectID && data.projectID.length >= 2 && projectSuggestions.length === 0 && showSuggestions && (
+              <div className="small text-muted mt-1">No projects found</div>
+            )}
             {error && <div className="text-danger small mt-1">{error}</div>}
           </div>
         </div>

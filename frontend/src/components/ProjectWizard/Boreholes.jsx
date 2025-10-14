@@ -51,6 +51,23 @@ function Boreholes({ data, onChange }) {
 
   return (
     <div className="card mb-3">
+      <style>
+        {`
+          .form-control,
+          .form-select,
+          .form-check-input {
+            border-color: #495057 !important;
+            border-width: 2px !important;
+          }
+          .form-control:focus,
+          .form-select:focus,
+          .form-check-input:focus {
+            border-color: #212529 !important;
+            border-width: 2px !important;
+            box-shadow: 0 0 0 0.2rem rgba(33, 37, 41, 0.25) !important;
+          }
+        `}
+      </style>
       <div className="card-header bg-light fw-bold">
         <span>Boreholes</span>
       </div>

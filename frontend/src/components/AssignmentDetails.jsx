@@ -21,6 +21,18 @@ function AssignmentDetails({ request, testers: testersProp }) {
   const getItemId = (r, i) =>
     r.ItemID ?? r.DetailID ?? r.SampleTestID ?? r.TestID ?? r.id ?? i;
 
+  // Submitted heuristic: tweak here if you have a canonical field for "submitted"
+  const isSubmitted = (r) => {
+    const s =
+      r?.Status ?? r?.TestStatus ?? r?.SampleStatus ?? r?.RequestStatus ?? null;
+    if (s && String(s).toLowerCase().includes("submitted")) return true;
+    if (r?.IsSubmitted === true) return true;
+    if (r?.Submitted === true) return true;
+    if (r?.SubmissionDate || r?.SubmittedAt) return true;
+    if (r?.ResultSubmittedDate || r?.ReportSubmittedDate) return true;
+    return false;
+  };
+
   // Load summary rows
   useEffect(() => {
     let mounted = true;
@@ -167,6 +179,17 @@ function AssignmentDetails({ request, testers: testersProp }) {
     [loading, submitting]
   );
 
+  // ---- NEW: per-request status counts (Assigned / Submitted) ----
+  const assignedCount = useMemo(
+    () => rows.filter((r) => !!r.AssignedTester).length,
+    [rows]
+  );
+
+  const submittedCount = useMemo(
+    () => rows.filter((r) => isSubmitted(r)).length,
+    [rows]
+  );
+
   if (!request) {
     return (
       <div className="text-muted">Select an assignment to view its details.</div>
@@ -191,9 +214,15 @@ function AssignmentDetails({ request, testers: testersProp }) {
             <strong>Requester:</strong>{" "}
             <span className="text-danger">{request.CreatedBy ?? "—"}</span>
           </div>
+          {/* SPLIT STATUS: show counts for this RequestID */}
           <div className="col-md-3 col-sm-6 mb-2">
             <strong>Status:</strong>{" "}
-            <span className="text-danger">{request.Status ?? "—"}</span>
+            <span className="badge bg-primary me-2" title="Items with an assigned tester">
+              Assigned: {assignedCount}
+            </span>
+            <span className="badge bg-success" title="Items marked as submitted">
+              Submitted: {submittedCount}
+            </span>
           </div>
         </div>
       </div>

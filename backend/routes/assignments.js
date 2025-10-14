@@ -37,6 +37,10 @@ module.exports = (db) => {
         EfisProjectId: efis,
         CreatedBy: "—",
         Status: "—",
+        // NEW: counts present even when empty
+        TotalTests: 0,
+        AssignedCount: 0,
+        SubmittedCount: 0,
       },
       items: [],
     });
@@ -88,20 +92,38 @@ module.exports = (db) => {
 
       if (rowsNew && rowsNew.length > 0) {
         const efis = rowsNew[0].EfisProjectId ?? "—";
+
+        // --- NEW: compute counts on the fly from current rows ---
+        const testRows = rowsNew.filter((r) => r.TestID != null);
+
+        const TotalTests = testRows.length;
+        const AssignedCount = testRows.reduce(
+          (n, r) => n + (r.AssignedTester && String(r.AssignedTester).trim() !== "" ? 1 : 0),
+          0
+        );
+        // If your "submitted" state is stored in pt.Status == 'Submitted'
+        const SubmittedCount = testRows.reduce(
+          (n, r) => n + (r.TestStatus === "Submitted" ? 1 : 0),
+          0
+        );
+
         const header = {
           RequestID: rowsNew[0].RequestID,
           EfisProjectId: efis,
           CreatedBy: rowsNew[0].CreatedBy ?? "—",
           Status: rowsNew[0].RequestStatus ?? "—",
+          // NEW: expose counts to the UI
+          TotalTests,
+          AssignedCount,
+          SubmittedCount,
         };
 
-        const items = rowsNew
-          .filter((r) => r.TestID != null)
-          .map(toUiRow);
+        const items = testRows.map(toUiRow);
 
         return res.json({ header, items });
       }
 
+      // -------- Legacy fallback --------
       const sqlLegacy = `
         SELECT
           tr.RequestID,
@@ -138,10 +160,41 @@ module.exports = (db) => {
           EfisProjectId: rowsOld[0].EfisProjectId ?? "—",
           CreatedBy: rowsOld[0].CreatedBy ?? "—",
           Status: rowsOld[0].RequestStatus ?? "—",
+          // NEW: legacy sets have no tester/status rows -> counts 0
+          TotalTests: rowsOld.length,
+          AssignedCount: 0,
+          SubmittedCount: 0,
         };
         const items = rowsOld.map(toUiRow);
         return res.json({ header, items });
       });
+    });
+  });
+
+  // ---------- counts-only convenience: GET /api/assignments/:requestId/counts ----------
+  // Returns { requestId, total, assigned, submitted }
+  router.get("/assignments/:requestId/counts", (req, res) => {
+    const requestId = Number(req.params.requestId);
+    if (!Number.isInteger(requestId))
+      return res.status(400).json({ error: "Invalid request id" });
+
+    const sql = `
+      SELECT
+        COUNT(pt.TestID) AS total,
+        SUM(CASE WHEN pt.AssignedTester IS NOT NULL AND TRIM(pt.AssignedTester) <> '' THEN 1 ELSE 0 END) AS assigned,
+        SUM(CASE WHEN pt.Status = 'Submitted' THEN 1 ELSE 0 END) AS submitted
+      FROM project_tests pt
+      WHERE pt.RequestID = ?
+    `;
+    db.query(sql, [requestId], (err, rows) => {
+      if (err) {
+        console.error("GET /assignments/:requestId/counts error:", err);
+        return res.status(500).json({ error: "Server error" });
+      }
+      const total = Number(rows?.[0]?.total || 0);
+      const assigned = Number(rows?.[0]?.assigned || 0);
+      const submitted = Number(rows?.[0]?.submitted || 0);
+      res.json({ requestId, total, assigned, submitted });
     });
   });
 

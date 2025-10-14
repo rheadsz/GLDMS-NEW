@@ -158,7 +158,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
       if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
 
       setSaveMsg(`Saved ${data.count ?? updates.length} update(s).`);
-      // Optional: refresh data from server after save
+      // Optional: refresh after save:
       // const reload = await fetch("/api/supervisor/request-samples");
       // setRows(await reload.json());
     } catch (e) {
@@ -212,7 +212,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
         .debug-bar { font-size: 12px; color: #6c757d; padding: 4px 8px; }
       `}</style>
 
-      {/* LEFT: Samples list */}
+      {/* LEFT: Samples list (Status column REMOVED) */}
       <aside className="lm-sidebar d-flex flex-column">
         <div className="lm-sticky-head p-3 border-bottom bg-white">
           <h6 className="m-0">Samples</h6>
@@ -220,21 +220,25 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
 
         <div className="flex-grow-1 overflow-auto">
           <table className="table table-sm table-hover table-striped mb-0 align-middle tbl-samples">
+            <colgroup>
+              <col style={{ width: "28%" }} />
+              <col style={{ width: "36%" }} />
+              <col style={{ width: "36%" }} />
+            </colgroup>
             <thead className="table-light sticky-top" style={{ top: 0 }}>
               <tr>
                 <th className="text-start">Sample ID</th>
                 <th className="text-start">Project ID</th>
                 <th className="text-start">Submitter</th>
-                <th className="text-center">Status</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={4} className="text-center py-4">Loading…</td></tr>
+                <tr><td colSpan={3} className="text-center py-4">Loading…</td></tr>
               ) : err ? (
-                <tr><td colSpan={4} className="text-danger text-center py-4">{err}</td></tr>
+                <tr><td colSpan={3} className="text-danger text-center py-4">{err}</td></tr>
               ) : sampleSummaries.length === 0 ? (
-                <tr><td colSpan={4} className="text-muted text-center py-4">No samples.</td></tr>
+                <tr><td colSpan={3} className="text-muted text-center py-4">No samples.</td></tr>
               ) : (
                 sampleSummaries.map((s) => {
                   const isActive = (active?.SampleID ?? active?.id) === (s.SampleID ?? s.id);
@@ -264,9 +268,6 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                       </td>
                       <td className="mono text-start">{s.EfisProjectID ?? "—"}</td>
                       <td className="text-start">{s.CreatedBy ?? "—"}</td>
-                      <td className={`text-center ${statusTextClass(s.Status)}`}>
-                        {s.Status ?? "—"}
-                      </td>
                     </tr>
                   );
                 })
@@ -281,7 +282,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
         </div>
       </aside>
 
-      {/* RIGHT: details */}
+      {/* RIGHT: details (Status stays here in the summary) */}
       <section className="lm-content">
         <div className="p-3 h-100 overflow-auto">
           {!active ? (

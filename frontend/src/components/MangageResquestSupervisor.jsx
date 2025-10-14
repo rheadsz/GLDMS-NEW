@@ -10,13 +10,11 @@ const SAMPLES_API = "http://localhost:3001/api/supervisor/samples";
 
 function AppWithSidebar() {
   // Tabs
-  // Keep stable keys for logic, but show new display names.
   const TAB_CONFIG = [
     { key: "assignments", label: "Assignments" },
     { key: "samples", label: "Samples" },
     { key: "tests", label: "Test Management" },   // renamed
     { key: "staff", label: "Lab Management" },    // renamed
-    // removed { key: "projects", label: "Projects" }
   ];
 
   const [activeTab, setActiveTab] = useState("assignments");
@@ -39,7 +37,7 @@ function AppWithSidebar() {
   const [samplesLoading, setSamplesLoading] = useState(false);
   const [selectedSample, setSelectedSample] = useState(null);
 
-  // ---------- Initial fetch (ALWAYS, so badges are populated) ----------
+  // ---------- Initial fetch (ALWAYS) ----------
   useEffect(() => {
     // requests
     setReqLoading(true);
@@ -135,30 +133,6 @@ function AppWithSidebar() {
     return list;
   }, [activeTab, requests, reqStatusFilter, reqSortOrder]);
 
-  // ===== Badges (always computed from state) =====
-  const submittedAssignmentsCount = useMemo(
-    () => requests.filter((req) => req.Status === "Submitted").length,
-    [requests]
-  );
-  const submittedSamplesCount = useMemo(
-    () => samples.filter((s) => s.Status === "Submitted").length,
-    [samples]
-  );
-
-  // shared status color helper
-  const statusTextClass = (status) => {
-    if (status === "Submitted" || status === "Rejected") return "text-danger";
-    if (
-      status === "Assigned" ||
-      status === "In Progress" ||
-      status === "Received" ||
-      status === "In Testing"
-    )
-      return "text-primary";
-    if (status === "Completed" || status === "Complete") return "text-success";
-    return "text-muted";
-  };
-
   const activeLabel =
     TAB_CONFIG.find((t) => t.key === activeTab)?.label ?? "Panel";
 
@@ -189,7 +163,7 @@ function AppWithSidebar() {
         }
         .mono {
           font-variant-numeric: tabular-nums;
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
         }
         .linklike { color: var(--bs-primary); text-decoration: none; }
         .linklike:hover { text-decoration: underline; }
@@ -221,14 +195,6 @@ function AppWithSidebar() {
               onClick={() => setActiveTab(key)}
             >
               {label}
-
-              {/* Badges */}
-              {key === "assignments" && submittedAssignmentsCount > 0 && (
-                <span className="badge bg-danger ms-2">{submittedAssignmentsCount}</span>
-              )}
-              {key === "samples" && submittedSamplesCount > 0 && (
-                <span className="badge bg-danger ms-2">{submittedSamplesCount}</span>
-              )}
             </button>
           ))}
         </div>
@@ -276,27 +242,25 @@ function AppWithSidebar() {
               </div>
             </div>
 
-            {/* Table */}
+            {/* Table (Status column removed) */}
             <div className="flex-grow-1 overflow-auto">
               <table className="table table-sm table-hover table-striped mb-0 align-middle tbl-assignments">
                 <colgroup>
-                  <col style={{ width: "16%" }} />
-                  <col style={{ width: "28%" }} />
-                  <col style={{ width: "28%" }} />
-                  <col style={{ width: "28%" }} />
+                  <col style={{ width: "20%" }} />
+                  <col style={{ width: "40%" }} />
+                  <col style={{ width: "40%" }} />
                 </colgroup>
                 <thead className="table-light sticky-top" style={{ top: 0 }}>
                   <tr>
                     <th className="text-center">Request No.</th>
                     <th className="text-start">Project ID</th>
                     <th className="text-start">Requester</th>
-                    <th className="text-center">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRequests.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="text-muted text-center py-4">
+                      <td colSpan={3} className="text-muted text-center py-4">
                         {reqLoading ? "Loading..." : "No assignments found."}
                       </td>
                     </tr>
@@ -326,9 +290,6 @@ function AppWithSidebar() {
                           </td>
                           <td className="text-start">
                             <span className="linklike">{req.CreatedBy ?? "—"}</span>
-                          </td>
-                          <td className={`text-center ${statusTextClass(req.Status)}`}>
-                            {req.Status || "—"}
                           </td>
                         </tr>
                       );

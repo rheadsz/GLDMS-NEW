@@ -105,11 +105,45 @@ function CreateProjectWizard({ userName, userEmail, userPhone, supervisors = [],
     setSubmitSuccess(false);
 
     try {
-      // Create a copy of the form data with properly structured boreholes
+      // Convert testAssignments to testRows format for backend
+      const testRows = [];
+      const testAssignments = formData.TestsInfo?.testAssignments || {};
+      const samples = formData.SampleInfoSets?.flatMap(set => set.samples || []) || [];
+      const boreholes = formData.Boreholes?.boreholes || [];
+      const structures = formData.ProjectInfo?.structures || [];
+      
+      Object.entries(testAssignments).forEach(([sampleId, tests]) => {
+        if (tests && tests.length > 0) {
+          // Find the sample to get its details
+          const sample = samples.find(s => s.id === sampleId);
+          if (sample) {
+            // Find the borehole for this sample
+            const borehole = boreholes.find(b => b.boreholeId === sample.boreholeId);
+            if (borehole) {
+              // Find the structure for this borehole
+              const structure = structures.find(s => s.id === borehole.structureId);
+              
+              testRows.push({
+                id: sampleId,
+                structure: structure?.id || '',
+                boreholeSample: `${sample.boreholeId} - ${sample.depthFrom}-${sample.depthTo}`,
+                tests: tests
+              });
+            }
+          }
+        }
+      });
+      
+      // Create a copy of the form data with properly structured boreholes and tests
       const submitData = {
         ...formData,
         // Ensure boreholes are passed correctly
         Boreholes: formData.Boreholes || {},
+        // Convert testAssignments to testRows for backend compatibility
+        TestsInfo: {
+          ...formData.TestsInfo,
+          testRows: testRows
+        },
         // Add the userName to be stored as CreatedBy
         userName: userName
       };

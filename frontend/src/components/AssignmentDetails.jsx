@@ -21,6 +21,13 @@ function AssignmentDetails({ request, testers: testersProp }) {
   const [openMenuId, setOpenMenuId] = useState(null);
   const menuRefs = useRef({});
 
+  // NEW: Assign modal state
+  const [assignModal, setAssignModal] = useState({
+    open: false,
+    testId: null,
+    form: { testerId: "", resultDueDate: "", reportDueDate: "", comments: "" },
+  });
+
   // Helpers
   function formatDateOnly(value) {
     if (!value) return "—";
@@ -154,8 +161,15 @@ function AssignmentDetails({ request, testers: testersProp }) {
     }));
   }
 
-  // Assign single row
+  // Assign single row (uses values in drafts[testId])
   async function handleAssign(testId) {
+    // Safety: do not allow assigning if currently marked Assigned
+    if (assignedRows.has(testId)) {
+      setError("This test is already assigned. Use Edit to make changes.");
+      setOpenMenuId(null);
+      return;
+    }
+
     const d = drafts[testId] || {};
     if (!d.testerId) { setError("Please select a tester."); return; }
     if (!d.resultDueDate && !d.reportDueDate) {
@@ -191,7 +205,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
     }
   }
 
-  // Bulk assign
+  // Bulk assign (unchanged)
   async function handleBulkAssign() {
     setError(null);
     setNotice(null);
@@ -223,7 +237,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
               resultDueDate: d.resultDueDate || null,
               reportDueDate: d.reportDueDate || null,
               notes: d.comments || null,
-            }),
+            } ),
           }).then(async (r) => {
             if (!r.ok) throw new Error(await r.text());
             return r.json();
@@ -269,9 +283,9 @@ function AssignmentDetails({ request, testers: testersProp }) {
     }
   }
 
-  // Which rows are allowed to be selected for "Assign Selected"?
-  // ✅ Unassigned rows: always selectable
-  // ✅ Assigned rows: selectable ONLY when in Edit mode
+  // Selectable rows for bulk:
+  // Unassigned: selectable
+  // Assigned: selectable ONLY when editing (as you requested earlier)
   const selectableIds = useMemo(() => {
     return rows.map((r, i) => {
       const id = getItemId(r, i);
@@ -285,10 +299,9 @@ function AssignmentDetails({ request, testers: testersProp }) {
     selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
 
   function toggleOne(id) {
-    // Guard: ignore clicks for non-selectable rows
     const isAssigned = assignedRows.has(id);
     const isEditing = editing.has(id);
-    if (isAssigned && !isEditing) return;
+    if (isAssigned && !isEditing) return; // ignore click if not allowed
 
     setSelected((prev) => {
       const next = new Set(prev);
@@ -307,7 +320,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
     });
   }
 
-  // Edit toggle (lets you enable selection & editing for assigned rows)
+  // Edit toggle (enables editing & bulk selection for assigned rows)
   function toggleEdit(id) {
     setEditing((prev) => {
       const next = new Set(prev);
@@ -315,6 +328,30 @@ function AssignmentDetails({ request, testers: testersProp }) {
       return next;
     });
     setOpenMenuId(null);
+  }
+
+  // NEW: open/close modal helpers
+  function openAssignModal(testId) {
+    // Prefill from current drafts
+    const d = drafts[testId] || { testerId: "", resultDueDate: "", reportDueDate: "", comments: "" };
+    setAssignModal({ open: true, testId, form: { ...d } });
+    setOpenMenuId(null);
+  }
+  function closeAssignModal() {
+    setAssignModal({ open: false, testId: null, form: { testerId: "", resultDueDate: "", reportDueDate: "", comments: "" } });
+  }
+  function setAssignField(field, value) {
+    setAssignModal((m) => ({ ...m, form: { ...m.form, [field]: value } }));
+  }
+  async function confirmAssignFromModal() {
+    const { testId, form } = assignModal;
+    // Push modal form into row drafts, then reuse existing handleAssign()
+    setDrafts((prev) => ({ ...prev, [testId]: { ...(prev[testId] || {}), ...form } }));
+    // Validate quickly here (optional visual feedback)
+    if (!form.testerId) { setError("Please select a tester."); return; }
+    if (!form.resultDueDate && !form.reportDueDate) { setError("Add a result or report due date."); return; }
+    await handleAssign(testId);
+    closeAssignModal();
   }
 
   const assignedCount = useMemo(() => rows.filter((r) => !!r.AssignedTester).length, [rows]);
@@ -328,10 +365,27 @@ function AssignmentDetails({ request, testers: testersProp }) {
 
   return (
     <div className="assignment-blue">
-      {/* Only table body background tweak (kept from earlier) */}
+      {/* Only table body background tweak (kept) */}
       <style>{`
         .assignment-blue .table tbody > tr > * { background-color: #EAF2FF !important; }
         .assignment-blue .table tbody > tr:hover > * { background-color: #D6E6FF !important; }
+        /* Modal styles */
+        .cmp-modal-backdrop {
+          position: fixed; inset: 0; background: rgba(0,0,0,.45);
+          display: flex; align-items: center; justify-content: center; z-index: 1050;
+        }
+        .cmp-modal {
+          width: 520px; max-width: calc(100vw - 2rem);
+          background: #fff; border-radius: 14px; box-shadow: 0 18px 48px rgba(0,0,0,.18);
+          overflow: hidden;
+        }
+        .cmp-modal header {
+          padding: .9rem 1.1rem; border-bottom: 1px solid rgba(0,0,0,.08);
+          display: flex; align-items: center; justify-content: space-between;
+        }
+        .cmp-modal header h5 { margin: 0; font-weight: 700; }
+        .cmp-modal .body { padding: 1rem 1.1rem; }
+        .cmp-modal .footer { padding: .9rem 1.1rem; border-top: 1px solid rgba(0,0,0,.08); display: flex; gap: .5rem; justify-content: flex-end; }
       `}</style>
 
       {error && <div className="alert alert-danger py-2 mb-2">{error}</div>}
@@ -494,7 +548,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
                     {isSubmitting && <span className="ms-2 small text-muted">Saving…</span>}
                   </td>
 
-                  {/* Actions */}
+                  {/* Actions: if Assigned -> HIDE "Assign" (modal), show only "Edit" */}
                   <td ref={(el) => (menuRefs.current[testId] = el)}>
                     <div style={{ position: "relative", display: "inline-block" }}>
                       <button
@@ -527,20 +581,22 @@ function AssignmentDetails({ request, testers: testersProp }) {
                             boxShadow: "0 12px 24px rgba(0,0,0,.08)"
                           }}
                         >
-                          <button
-                            type="button"
-                            style={{ display: "block", width: "100%", padding: "0.5rem 0.875rem", background: "transparent", border: 0, textAlign: "left" }}
-                            onClick={() => handleAssign(testId)}
-                          >
-                            {isSubmitting ? "Saving…" : "Assign"}
-                          </button>
+                          {!assignedRows.has(testId) && (
+                            <button
+                              type="button"
+                              style={{ display: "block", width: "100%", padding: "0.5rem 0.875rem", background: "transparent", border: 0, textAlign: "left" }}
+                              onClick={() => openAssignModal(testId)}
+                            >
+                              Assign…
+                            </button>
+                          )}
                           <button
                             type="button"
                             style={{ display: "block", width: "100%", padding: "0.5rem 0.875rem", background: "transparent", border: 0, textAlign: "left" }}
                             onClick={() => toggleEdit(testId)}
-                            title={isEditing ? "Make read-only" : "Make editable"}
+                            title={editing.has(testId) ? "Make read-only" : "Make editable"}
                           >
-                            {isEditing ? "Done Editing" : "Edit"}
+                            {editing.has(testId) ? "Done Editing" : "Edit"}
                           </button>
                         </div>
                       )}
@@ -568,6 +624,96 @@ function AssignmentDetails({ request, testers: testersProp }) {
           {bulkSubmitting ? "Assigning…" : `Assign Selected (${selectedCount})`}
         </button>
       </div>
+
+      {/* ======= Assign Modal ======= */}
+      {assignModal.open && (
+        <div
+          className="cmp-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="assignModalTitle"
+          onMouseDown={(e) => {
+            // close when clicking backdrop (but not inner card)
+            if (e.target.classList.contains("cmp-modal-backdrop")) closeAssignModal();
+          }}
+        >
+          <div className="cmp-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <header>
+              <h5 id="assignModalTitle">Assign Tester</h5>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary"
+                onClick={closeAssignModal}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </header>
+            <div className="body">
+              <div className="mb-3">
+                <label className="form-label">Tester</label>
+                <select
+                  className="form-select"
+                  value={assignModal.form.testerId}
+                  onChange={(e) => setAssignField("testerId", e.target.value)}
+                >
+                  <option value="">— Select tester —</option>
+                  {testers.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="row">
+                <div className="col-sm-6 mb-3">
+                  <label className="form-label">Result Due</label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={assignModal.form.resultDueDate}
+                    onChange={(e) => setAssignField("resultDueDate", e.target.value)}
+                  />
+                </div>
+                <div className="col-sm-6 mb-3">
+                  <label className="form-label">Report Due</label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={assignModal.form.reportDueDate}
+                    onChange={(e) => setAssignField("reportDueDate", e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="mb-1">
+                <label className="form-label">Comments</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Optional"
+                  value={assignModal.form.comments}
+                  onChange={(e) => setAssignField("comments", e.target.value)}
+                />
+              </div>
+
+              <div className="form-text">
+                * A tester and at least one due date (Result or Report) are required.
+              </div>
+            </div>
+            <div className="footer">
+              <button className="btn btn-light" onClick={closeAssignModal}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                onClick={confirmAssignFromModal}
+                disabled={!!submitting[assignModal.testId]}
+              >
+                {submitting[assignModal.testId] ? "Saving…" : "Assign"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ======= /Assign Modal ======= */}
     </div>
   );
 }

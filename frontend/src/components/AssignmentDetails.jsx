@@ -9,19 +9,19 @@ function AssignmentDetails({ request, testers: testersProp }) {
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
 
-  // Track assigned rows + selection + bulk action state
+  // Track assigned rows + selection + bulk state
   const [assignedRows, setAssignedRows] = useState(() => new Set());
   const [selected, setSelected] = useState(() => new Set());
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
 
-  // Rows currently editable. IMPORTANT: now initializes to UNASSIGNED ONLY.
+  // Editable rows: on load -> only UNASSIGNED are editable
   const [editing, setEditing] = useState(() => new Set());
 
-  // Pure-React dropdown per-row
+  // Row actions dropdown
   const [openMenuId, setOpenMenuId] = useState(null);
   const menuRefs = useRef({});
 
-  // --- Helpers ---
+  // Helpers
   function formatDateOnly(value) {
     if (!value) return "—";
     const s = String(value);
@@ -32,7 +32,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
   const getItemId = (r, i) =>
     r.ItemID ?? r.DetailID ?? r.SampleTestID ?? r.TestID ?? r.id ?? i;
 
-  // Close menus on outside click / Esc
+  // Close dropdown on outside/Esc
   useEffect(() => {
     function onDocClick(e) {
       if (!openMenuId) return;
@@ -48,7 +48,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
     };
   }, [openMenuId]);
 
-  // Load summary rows
+  // Load rows
   useEffect(() => {
     let mounted = true;
     setError(null);
@@ -100,8 +100,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
 
         setDrafts(nextDrafts);
         setAssignedRows(nextAssigned);
-
-        // ✅ New: make ONLY unassigned rows editable on load
+        // On load: only UNASSIGNED rows are editable
         setEditing(new Set(unassignedIds));
       })
       .catch((e) => {
@@ -178,7 +177,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       await res.json();
 
-      // Mark assigned; after saving, row becomes READ-ONLY
+      // Mark assigned + make row read-only after save
       setAssignedRows((prev) => new Set([...prev, testId]));
       setEditing((prev) => { const next = new Set(prev); next.delete(testId); return next; });
       setSelected((prev) => { const next = new Set(prev); next.delete(testId); return next; });
@@ -270,20 +269,34 @@ function AssignmentDetails({ request, testers: testersProp }) {
     }
   }
 
-  // Selection helpers
-  const selectableIds = useMemo(
-    () => rows.map((r, i) => getItemId(r, i)),
-    [rows]
-  );
-  const allSelectableChecked = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
+  // Which rows are allowed to be selected for "Assign Selected"?
+  // ✅ Unassigned rows: always selectable
+  // ✅ Assigned rows: selectable ONLY when in Edit mode
+  const selectableIds = useMemo(() => {
+    return rows.map((r, i) => {
+      const id = getItemId(r, i);
+      const isAssigned = assignedRows.has(id);
+      const isEditing = editing.has(id);
+      return (!isAssigned || isEditing) ? id : null;
+    }).filter(Boolean);
+  }, [rows, assignedRows, editing]);
+
+  const allSelectableChecked =
+    selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
 
   function toggleOne(id) {
+    // Guard: ignore clicks for non-selectable rows
+    const isAssigned = assignedRows.has(id);
+    const isEditing = editing.has(id);
+    if (isAssigned && !isEditing) return;
+
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   }
+
   function toggleAll() {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -294,7 +307,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
     });
   }
 
-  // Edit toggle: lets user make an Assigned row editable on demand
+  // Edit toggle (lets you enable selection & editing for assigned rows)
   function toggleEdit(id) {
     setEditing((prev) => {
       const next = new Set(prev);
@@ -315,14 +328,10 @@ function AssignmentDetails({ request, testers: testersProp }) {
 
   return (
     <div className="assignment-blue">
-      {/* Optional: ONLY table background color tweak */}
+      {/* Only table body background tweak (kept from earlier) */}
       <style>{`
-        .assignment-blue .table tbody > tr > * {
-          background-color: #EAF2FF !important; /* light blue body cells */
-        }
-        .assignment-blue .table tbody > tr:hover > * {
-          background-color: #D6E6FF !important; /* slightly darker on hover */
-        }
+        .assignment-blue .table tbody > tr > * { background-color: #EAF2FF !important; }
+        .assignment-blue .table tbody > tr:hover > * { background-color: #D6E6FF !important; }
       `}</style>
 
       {error && <div className="alert alert-danger py-2 mb-2">{error}</div>}
@@ -382,9 +391,10 @@ function AssignmentDetails({ request, testers: testersProp }) {
             rows.map((r, i) => {
               const testId = getItemId(r, i);
               const d = drafts[testId] || {};
+              const isAssigned = assignedRows.has(testId);
+              const isEditing = editing.has(testId);
               const checked = selected.has(testId);
               const isSubmitting = !!submitting[testId];
-              const isEditing = editing.has(testId); // ← controls editability
 
               if (!menuRefs.current[testId]) menuRefs.current[testId] = null;
 
@@ -395,13 +405,14 @@ function AssignmentDetails({ request, testers: testersProp }) {
 
               return (
                 <tr key={testId} className={isEditing ? "table-active" : undefined}>
-                  {/* Select */}
+                  {/* Select: disabled for Assigned unless editing */}
                   <td className="text-center">
                     <input
                       type="checkbox"
                       className="form-check-input"
                       checked={checked}
                       onChange={() => toggleOne(testId)}
+                      disabled={isAssigned && !isEditing}
                       aria-label={`Select test ${testId}`}
                     />
                   </td>
@@ -411,7 +422,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
                   <td>{formatDateOnly(r.RequestSubmissionDate)}</td>
                   <td>{formatDateOnly(r.RequestedDueDate)}</td>
 
-                  {/* Editable only when isEditing === true */}
+                  {/* Editable only when in editing set */}
                   <td>
                     {isEditing ? (
                       <select
@@ -475,7 +486,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
 
                   {/* Status */}
                   <td>
-                    {assignedRows.has(testId) ? (
+                    {isAssigned ? (
                       <span className="badge rounded-pill text-bg-success">Assigned</span>
                     ) : (
                       <span className="badge rounded-pill text-bg-secondary">Unassigned</span>
@@ -483,7 +494,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
                     {isSubmitting && <span className="ms-2 small text-muted">Saving…</span>}
                   </td>
 
-                  {/* Actions (last column) */}
+                  {/* Actions */}
                   <td ref={(el) => (menuRefs.current[testId] = el)}>
                     <div style={{ position: "relative", display: "inline-block" }}>
                       <button
@@ -552,7 +563,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
               ? "Select at least one test"
               : "Assign using each selected row's inputs"
           }
-          disabled={busy}
+          disabled={busy || selectedCount === 0}
         >
           {bulkSubmitting ? "Assigning…" : `Assign Selected (${selectedCount})`}
         </button>

@@ -1,4 +1,3 @@
-// backend/routes/request-samples.js
 const express = require("express");
 
 module.exports = function requestSamplesRouter(db) {
@@ -6,8 +5,7 @@ module.exports = function requestSamplesRouter(db) {
 
   // ------------------------------------------
   // GET /api/supervisor/request-samples
-  // Include TestID, TestStatus, NumberOfSpecimen so the UI can edit & submit
-  // (No need to return DateAssigned for current UI)
+  // Return DateAssigned as YYYY-MM-DD for stable UI display
   // ------------------------------------------
   router.get("/request-samples", (_req, res) => {
     const sql = `
@@ -27,7 +25,8 @@ module.exports = function requestSamplesRouter(db) {
         pt.AssignedTester,
         pt.ResultDueDate,
         pt.TestStatus,
-        pt.NumberOfSpecimen
+        pt.NumberOfSpecimen,
+        DATE_FORMAT(pt.DateAssigned, '%Y-%m-%d') AS DateAssigned
       FROM project_samples AS ps
       JOIN project_requests AS pr
         ON pr.RequestID = ps.RequestID
@@ -53,7 +52,7 @@ module.exports = function requestSamplesRouter(db) {
   // ------------------------------------------
   // POST /api/supervisor/request-samples/update-tests
   // Body: { updates: [{ TestID, TestStatus|null, NumberOfSpecimen|null, DateAssigned|null('YYYY-MM-DD') }, ...] }
-  // Saves to project_tests (writes DateAssigned if provided)
+  // Saves to project_tests
   // ------------------------------------------
   router.post("/request-samples/update-tests", (req, res) => {
     const { updates } = req.body || {};
@@ -73,9 +72,13 @@ module.exports = function requestSamplesRouter(db) {
       }
     }
 
+    // Preserve existing DateAssigned if client sends NULL
     const sql = `
       UPDATE project_tests
-      SET TestStatus = ?, NumberOfSpecimen = ?, DateAssigned = ?
+      SET
+        TestStatus = ?,
+        NumberOfSpecimen = ?,
+        DateAssigned = COALESCE(?, DateAssigned)
       WHERE TestID = ?;
     `;
 
@@ -86,7 +89,7 @@ module.exports = function requestSamplesRouter(db) {
           [
             u.TestStatus ?? null,
             typeof u.NumberOfSpecimen === "number" ? u.NumberOfSpecimen : null,
-            u.DateAssigned ?? null, // DATE column
+            u.DateAssigned ?? null, // if null, COALESCE keeps current DB value
             u.TestID,
           ],
           (err, result) => (err ? reject(err) : resolve(result))

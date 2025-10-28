@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
-function AssignmentDetails({ request, testers: testersProp }) {
+function AssignmentDetails({ request, testers: testersProp, onRequestAttentionChange }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [testers, setTesters] = useState([]);
@@ -17,15 +17,20 @@ function AssignmentDetails({ request, testers: testersProp }) {
   // Editable rows: on load -> only UNASSIGNED are editable
   const [editing, setEditing] = useState(() => new Set());
 
-  // Row actions dropdown
-  const [openMenuId, setOpenMenuId] = useState(null);
-  const menuRefs = useRef({});
-
-  // NEW: Assign modal state
+  // Assign modal state
   const [assignModal, setAssignModal] = useState({
     open: false,
     testId: null,
     form: { testerId: "", resultDueDate: "", reportDueDate: "", comments: "" },
+  });
+
+  // History modal state
+  const [historyModal, setHistoryModal] = useState({
+    open: false,
+    testId: null,
+    loading: false,
+    error: null,
+    items: [],
   });
 
   // Helpers
@@ -36,24 +41,34 @@ function AssignmentDetails({ request, testers: testersProp }) {
     if (s.includes(" ")) return s.split(" ")[0];
     return s;
   }
+  function formatDateTimeLocal(iso) {
+    if (!iso) return "—";
+    try {
+      const d = new Date(iso);
+      if (Number.isNaN(+d)) return String(iso);
+      return d.toLocaleString();
+    } catch {
+      return String(iso);
+    }
+  }
+  function renderValue(v) {
+    if (v === null || v === undefined || v === "") return "—";
+    return String(v);
+  }
+
+  const FIELD_LABELS = {
+    AssignedTester: "Assigned Tester",
+    ResultDueDate: "Result Due Date",
+    ReportDueDate: "Report Due Date",
+    Comments: "Comments",
+    Notes: "Comments",
+    Status: "Status",
+    RequestedDueDate: "Requested Due Date",
+    RequestSubmissionDate: "Request Submission Date",
+  };
+
   const getItemId = (r, i) =>
     r.ItemID ?? r.DetailID ?? r.SampleTestID ?? r.TestID ?? r.id ?? i;
-
-  // Close dropdown on outside/Esc
-  useEffect(() => {
-    function onDocClick(e) {
-      if (!openMenuId) return;
-      const ref = menuRefs.current[openMenuId];
-      if (ref && !ref.contains(e.target)) setOpenMenuId(null);
-    }
-    function onEsc(e) { if (e.key === "Escape") setOpenMenuId(null); }
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onEsc);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onEsc);
-    };
-  }, [openMenuId]);
 
   // Load rows
   useEffect(() => {
@@ -63,7 +78,6 @@ function AssignmentDetails({ request, testers: testersProp }) {
     setAssignedRows(new Set());
     setSelected(new Set());
     setEditing(new Set());
-    setOpenMenuId(null);
 
     if (!request?.RequestID) {
       setRows([]);
@@ -154,6 +168,22 @@ function AssignmentDetails({ request, testers: testersProp }) {
     return () => { mounted = false; };
   }, [request?.RequestID, testersProp]);
 
+  // Derived: counts
+  const assignedCount = useMemo(() => rows.filter((r) => !!r.AssignedTester).length, [rows]);
+  const totalCount = useMemo(() => rows.length, [rows]);
+  const unassignedCount = totalCount - assignedCount;
+
+  // Derived: has any unassigned rows?
+  const hasUnassigned = useMemo(() => unassignedCount > 0, [unassignedCount]);
+
+  // Notify parent whenever unassigned status changes
+  useEffect(() => {
+    if (!request?.RequestID) return;
+    if (typeof onRequestAttentionChange === "function") {
+      onRequestAttentionChange(request.RequestID, hasUnassigned);
+    }
+  }, [request?.RequestID, hasUnassigned, onRequestAttentionChange]);
+
   function updateDraft(itemId, patch) {
     setDrafts((prev) => ({
       ...prev,
@@ -161,12 +191,11 @@ function AssignmentDetails({ request, testers: testersProp }) {
     }));
   }
 
-  // Assign single row (uses values in drafts[testId])
+  // Assign (or Save edits) for a single row
   async function handleAssign(testId) {
-    // Safety: do not allow assigning if currently marked Assigned
-    if (assignedRows.has(testId)) {
-      setError("This test is already assigned. Use Edit to make changes.");
-      setOpenMenuId(null);
+    const isEditing = editing.has(testId);
+    if (assignedRows.has(testId) && !isEditing) {
+      setError("This test is already assigned. Click Edit to make changes.");
       return;
     }
 
@@ -180,7 +209,12 @@ function AssignmentDetails({ request, testers: testersProp }) {
       setSubmitting((s) => ({ ...s, [testId]: true }));
       const res = await fetch(`/api/assignments/${testId}/assign`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          // If you need dev headers, uncomment next 2 lines and set valid values:
+          // "x-user-id": "2",
+          // "x-user-name": "supervisor1",
+        },
         body: JSON.stringify({
           assignedTester: d.testerId,
           resultDueDate: d.resultDueDate || null,
@@ -188,24 +222,27 @@ function AssignmentDetails({ request, testers: testersProp }) {
           notes: d.comments || null,
         }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(`HTTP ${res.status} ${msg}`);
+      }
       await res.json();
 
-      // Mark assigned + make row read-only after save
       setAssignedRows((prev) => new Set([...prev, testId]));
       setEditing((prev) => { const next = new Set(prev); next.delete(testId); return next; });
       setSelected((prev) => { const next = new Set(prev); next.delete(testId); return next; });
 
-      setNotice("Assignment saved ✅");
-    } catch {
+      setNotice(isEditing ? "Changes saved ✅" : "Assignment saved ✅");
+    } catch (e) {
+      console.error("assign error:", e);
       setError("Couldn’t save assignment.");
     } finally {
       setSubmitting((s) => ({ ...s, [testId]: false }));
-      setOpenMenuId(null);
     }
   }
 
-  // Bulk assign (unchanged)
+  // Bulk assign
   async function handleBulkAssign() {
     setError(null);
     setNotice(null);
@@ -231,13 +268,18 @@ function AssignmentDetails({ request, testers: testersProp }) {
         valid.map(({ id, d }) =>
           fetch(`/api/assignments/${id}/assign`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              // Dev headers (optional):
+              // "x-user-id": "2",
+              // "x-user-name": "supervisor1",
+            },
             body: JSON.stringify({
               assignedTester: d.testerId,
               resultDueDate: d.resultDueDate || null,
               reportDueDate: d.reportDueDate || null,
               notes: d.comments || null,
-            } ),
+            }),
           }).then(async (r) => {
             if (!r.ok) throw new Error(await r.text());
             return r.json();
@@ -250,7 +292,6 @@ function AssignmentDetails({ request, testers: testersProp }) {
 
       if (succeeded.length > 0) {
         setAssignedRows((prev) => new Set([...prev, ...succeeded]));
-        // Make those rows read-only after success
         setEditing((prev) => {
           const next = new Set(prev);
           succeeded.forEach((id) => next.delete(id));
@@ -276,16 +317,15 @@ function AssignmentDetails({ request, testers: testersProp }) {
       } else {
         setError(invalid.length ? "No assignments made. Selected rows are missing tester or due date." : "Bulk assignment failed.");
       }
-    } catch {
+    } catch (e) {
+      console.error("bulk assign error:", e);
       setError("Bulk assignment failed.");
     } finally {
       setBulkSubmitting(false);
     }
   }
 
-  // Selectable rows for bulk:
-  // Unassigned: selectable
-  // Assigned: selectable ONLY when editing (as you requested earlier)
+  // Selectable ids
   const selectableIds = useMemo(() => {
     return rows.map((r, i) => {
       const id = getItemId(r, i);
@@ -301,7 +341,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
   function toggleOne(id) {
     const isAssigned = assignedRows.has(id);
     const isEditing = editing.has(id);
-    if (isAssigned && !isEditing) return; // ignore click if not allowed
+    if (isAssigned && !isEditing) return;
 
     setSelected((prev) => {
       const next = new Set(prev);
@@ -320,22 +360,18 @@ function AssignmentDetails({ request, testers: testersProp }) {
     });
   }
 
-  // Edit toggle (enables editing & bulk selection for assigned rows)
   function toggleEdit(id) {
     setEditing((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-    setOpenMenuId(null);
   }
 
-  // NEW: open/close modal helpers
+  // Modal helpers (Assign)
   function openAssignModal(testId) {
-    // Prefill from current drafts
     const d = drafts[testId] || { testerId: "", resultDueDate: "", reportDueDate: "", comments: "" };
     setAssignModal({ open: true, testId, form: { ...d } });
-    setOpenMenuId(null);
   }
   function closeAssignModal() {
     setAssignModal({ open: false, testId: null, form: { testerId: "", resultDueDate: "", reportDueDate: "", comments: "" } });
@@ -345,17 +381,33 @@ function AssignmentDetails({ request, testers: testersProp }) {
   }
   async function confirmAssignFromModal() {
     const { testId, form } = assignModal;
-    // Push modal form into row drafts, then reuse existing handleAssign()
     setDrafts((prev) => ({ ...prev, [testId]: { ...(prev[testId] || {}), ...form } }));
-    // Validate quickly here (optional visual feedback)
     if (!form.testerId) { setError("Please select a tester."); return; }
     if (!form.resultDueDate && !form.reportDueDate) { setError("Add a result or report due date."); return; }
     await handleAssign(testId);
     closeAssignModal();
   }
 
-  const assignedCount = useMemo(() => rows.filter((r) => !!r.AssignedTester).length, [rows]);
-  const totalCount = useMemo(() => rows.length, [rows]);
+  // Modal helpers (History)
+  function openHistoryModal(testId) {
+    setHistoryModal({ open: true, testId, loading: true, error: null, items: [] });
+    fetch(`/api/assignments/${testId}/history`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        const items = Array.isArray(data?.items) ? data.items : [];
+        items.sort((a, b) => new Date(b.ChangedAt) - new Date(a.ChangedAt));
+        setHistoryModal((m) => ({ ...m, loading: false, items }));
+      })
+      .catch((e) => {
+        console.error("history fetch error:", e);
+        setHistoryModal((m) => ({ ...m, loading: false, error: "Couldn’t load change history." }));
+      });
+  }
+  function closeHistoryModal() {
+    setHistoryModal({ open: false, testId: null, loading: false, error: null, items: [] });
+  }
+
   const selectedCount = selected.size;
   const busy = loading || bulkSubmitting || Object.values(submitting).some(Boolean);
 
@@ -365,7 +417,6 @@ function AssignmentDetails({ request, testers: testersProp }) {
 
   return (
     <div className="assignment-blue">
-      {/* Only table body background tweak (kept) */}
       <style>{`
         .assignment-blue .table tbody > tr > * { background-color: #EAF2FF !important; }
         .assignment-blue .table tbody > tr:hover > * { background-color: #D6E6FF !important; }
@@ -375,7 +426,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
           display: flex; align-items: center; justify-content: center; z-index: 1050;
         }
         .cmp-modal {
-          width: 520px; max-width: calc(100vw - 2rem);
+          width: 640px; max-width: calc(100vw - 2rem);
           background: #fff; border-radius: 14px; box-shadow: 0 18px 48px rgba(0,0,0,.18);
           overflow: hidden;
         }
@@ -384,8 +435,15 @@ function AssignmentDetails({ request, testers: testersProp }) {
           display: flex; align-items: center; justify-content: space-between;
         }
         .cmp-modal header h5 { margin: 0; font-weight: 700; }
-        .cmp-modal .body { padding: 1rem 1.1rem; }
+        .cmp-modal .body { padding: 1rem 1.1rem; max-height: 65vh; overflow: auto; }
         .cmp-modal .footer { padding: .9rem 1.1rem; border-top: 1px solid rgba(0,0,0,.08); display: flex; gap: .5rem; justify-content: flex-end; }
+        .history-event { border: 1px solid rgba(0,0,0,.08); border-radius: 10px; padding: .75rem .9rem; margin-bottom: .75rem; background: #f9fbff; }
+        .history-header { display:flex; gap:.75rem; align-items:center; margin-bottom: .5rem; }
+        .history-grid { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:.5rem .75rem; }
+        @media (max-width: 520px) { .history-grid { grid-template-columns: 1fr; } }
+        .chip { display:inline-block; font-size:.8rem; padding:.15rem .5rem; border-radius: 999px; background:#eef3ff; color:#2f4b90; }
+        .diff { display:flex; gap:.35rem; align-items:center; }
+        .diff .arrow { opacity:.6; }
       `}</style>
 
       {error && <div className="alert alert-danger py-2 mb-2">{error}</div>}
@@ -407,7 +465,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
           <div className="col-md-3 col-sm-6 mb-2">
             <strong>Summary:</strong>{" "}
             <span className="badge rounded-pill text-bg-primary me-2">Assigned: {assignedCount}</span>
-            <span className="badge rounded-pill text-bg-secondary">No. of Test: {totalCount}</span>
+            <span className="badge rounded-pill text-bg-warning text-dark">Unassigned: {unassignedCount}</span>
           </div>
         </div>
       </div>
@@ -433,7 +491,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
             <th>Report Due</th>
             <th>Comments</th>
             <th>Status</th>
-            <th style={{ width: "6.5rem" }}>Actions</th>
+            <th style={{ width: "12rem" }}>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -450,8 +508,6 @@ function AssignmentDetails({ request, testers: testersProp }) {
               const checked = selected.has(testId);
               const isSubmitting = !!submitting[testId];
 
-              if (!menuRefs.current[testId]) menuRefs.current[testId] = null;
-
               const viewTester = d.testerId || "—";
               const viewResultDue = d.resultDueDate || "—";
               const viewReportDue = d.reportDueDate || "—";
@@ -459,7 +515,6 @@ function AssignmentDetails({ request, testers: testersProp }) {
 
               return (
                 <tr key={testId} className={isEditing ? "table-active" : undefined}>
-                  {/* Select: disabled for Assigned unless editing */}
                   <td className="text-center">
                     <input
                       type="checkbox"
@@ -476,7 +531,6 @@ function AssignmentDetails({ request, testers: testersProp }) {
                   <td>{formatDateOnly(r.RequestSubmissionDate)}</td>
                   <td>{formatDateOnly(r.RequestedDueDate)}</td>
 
-                  {/* Editable only when in editing set */}
                   <td>
                     {isEditing ? (
                       <select
@@ -538,7 +592,6 @@ function AssignmentDetails({ request, testers: testersProp }) {
                     )}
                   </td>
 
-                  {/* Status */}
                   <td>
                     {isAssigned ? (
                       <span className="badge rounded-pill text-bg-success">Assigned</span>
@@ -548,57 +601,59 @@ function AssignmentDetails({ request, testers: testersProp }) {
                     {isSubmitting && <span className="ms-2 small text-muted">Saving…</span>}
                   </td>
 
-                  {/* Actions: if Assigned -> HIDE "Assign" (modal), show only "Edit" */}
-                  <td ref={(el) => (menuRefs.current[testId] = el)}>
-                    <div style={{ position: "relative", display: "inline-block" }}>
+                  <td>
+                    <div style={{ display: "flex", gap: ".4rem", alignItems: "center", flexWrap: "wrap" }}>
                       <button
                         type="button"
-                        className="btn btn-sm btn-outline-secondary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setOpenMenuId((prev) => (prev === testId ? null : testId));
-                        }}
-                        aria-haspopup="menu"
-                        aria-expanded={openMenuId === testId}
+                        className="btn btn-sm btn-outline-primary"
+                        onClick={() => openHistoryModal(testId)}
+                        title="View change history"
                       >
-                        Actions ▾
+                        Record
                       </button>
 
-                      {openMenuId === testId && (
-                        <div
-                          role="menu"
-                          style={{
-                            position: "absolute",
-                            top: "100%",
-                            right: 0,
-                            zIndex: 1000,
-                            minWidth: "10rem",
-                            padding: "0.25rem 0",
-                            marginTop: "0.25rem",
-                            backgroundColor: "#fff",
-                            border: "1px solid rgba(0,0,0,.12)",
-                            borderRadius: "12px",
-                            boxShadow: "0 12px 24px rgba(0,0,0,.08)"
-                          }}
+                      {!isAssigned && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary"
+                          onClick={() => openAssignModal(testId)}
+                          title="Assign this test"
                         >
-                          {!assignedRows.has(testId) && (
-                            <button
-                              type="button"
-                              style={{ display: "block", width: "100%", padding: "0.5rem 0.875rem", background: "transparent", border: 0, textAlign: "left" }}
-                              onClick={() => openAssignModal(testId)}
-                            >
-                              Assign…
-                            </button>
-                          )}
+                          Assign…
+                        </button>
+                      )}
+
+                      {isAssigned && !isEditing && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-secondary"
+                          onClick={() => toggleEdit(testId)}
+                          title="Edit this row"
+                        >
+                          Edit
+                        </button>
+                      )}
+
+                      {isEditing && (
+                        <>
                           <button
                             type="button"
-                            style={{ display: "block", width: "100%", padding: "0.5rem 0.875rem", background: "transparent", border: 0, textAlign: "left" }}
-                            onClick={() => toggleEdit(testId)}
-                            title={editing.has(testId) ? "Make read-only" : "Make editable"}
+                            className="btn btn-sm btn-success"
+                            onClick={() => handleAssign(testId)}
+                            disabled={isSubmitting}
+                            title="Save changes"
                           >
-                            {editing.has(testId) ? "Done Editing" : "Edit"}
+                            {isSubmitting ? "Saving…" : "Save"}
                           </button>
-                        </div>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-light"
+                            onClick={() => toggleEdit(testId)}
+                            title="Stop editing"
+                          >
+                            Done
+                          </button>
+                        </>
                       )}
                     </div>
                   </td>
@@ -625,7 +680,7 @@ function AssignmentDetails({ request, testers: testersProp }) {
         </button>
       </div>
 
-      {/* ======= Assign Modal ======= */}
+      {/* Assign Modal */}
       {assignModal.open && (
         <div
           className="cmp-modal-backdrop"
@@ -633,7 +688,6 @@ function AssignmentDetails({ request, testers: testersProp }) {
           aria-modal="true"
           aria-labelledby="assignModalTitle"
           onMouseDown={(e) => {
-            // close when clicking backdrop (but not inner card)
             if (e.target.classList.contains("cmp-modal-backdrop")) closeAssignModal();
           }}
         >
@@ -713,7 +767,80 @@ function AssignmentDetails({ request, testers: testersProp }) {
           </div>
         </div>
       )}
-      {/* ======= /Assign Modal ======= */}
+
+      {/* History Modal */}
+      {historyModal.open && (
+        <div
+          className="cmp-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="historyModalTitle"
+          onMouseDown={(e) => {
+            if (e.target.classList.contains("cmp-modal-backdrop")) closeHistoryModal();
+          }}
+        >
+          <div className="cmp-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <header>
+              <h5 id="historyModalTitle">Change History</h5>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary"
+                onClick={closeHistoryModal}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </header>
+            <div className="body">
+              {historyModal.loading ? (
+                <div className="text-muted">Loading history…</div>
+              ) : historyModal.error ? (
+                <div className="alert alert-danger py-2">{historyModal.error}</div>
+              ) : historyModal.items.length === 0 ? (
+                <div className="text-muted">No changes recorded for this test.</div>
+              ) : (
+                historyModal.items.map((ev) => {
+                  const changes = ev.Changes && typeof ev.Changes === "object" ? ev.Changes : {};
+                  const fields = Object.keys(changes);
+                  return (
+                    <div key={ev.HistoryID ?? ev.ChangedAt + ev.ChangedBy} className="history-event">
+                      <div className="history-header">
+                        <span className="chip">{ev.ChangedBy || "Unknown user"}</span>
+                        <span className="text-muted small">{formatDateTimeLocal(ev.ChangedAt)}</span>
+                      </div>
+                      {fields.length === 0 ? (
+                        <div className="text-muted">No detailed field changes provided.</div>
+                      ) : (
+                        <div className="history-grid">
+                          {fields.map((k) => {
+                            const label = FIELD_LABELS[k] || k;
+                            const diff = changes[k] || {};
+                            return (
+                              <div key={k} className="border rounded p-2 bg-white">
+                                <div className="small text-uppercase text-muted fw-semibold mb-1">
+                                  {label}
+                                </div>
+                                <div className="diff">
+                                  <span className="text-muted">{renderValue(diff.from)}</span>
+                                  <span className="arrow">→</span>
+                                  <span className="fw-semibold">{renderValue(diff.to)}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            <div className="footer">
+              <button className="btn btn-primary" onClick={closeHistoryModal}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

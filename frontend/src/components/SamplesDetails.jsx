@@ -1,5 +1,5 @@
 // frontend/components/SamplesDetails.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 export default function SamplesDetails({ requestId, sidebarOpen = true }) {
   const SIDEBAR_OPEN_PX = 640;
@@ -15,6 +15,18 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
   // uiByTest[k] = { specimenCount, action, actionDate }
   const [uiByTest, setUiByTest] = useState({});
 
+  // Edit flow + autosave
+  const [isEditing, setIsEditing] = useState(false);
+  const [userEdited, setUserEdited] = useState(false);
+
+  // Track focused editable controls to avoid mid-change autosaves
+  const focusCountRef = useRef(0);
+  const [hasFocusedEditor, setHasFocusedEditor] = useState(false);
+  const debounceRef = useRef(null);
+
+  // Keep a snapshot to support "Cancel"
+  const originalUiSnapshotRef = useRef({});
+
   useEffect(() => {
     setLoading(true);
     setErr(null);
@@ -22,6 +34,10 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     setActive(null);
     setUiByTest({});
     setSaveMsg("");
+    setIsEditing(false);
+    setUserEdited(false);
+    focusCountRef.current = 0;
+    setHasFocusedEditor(false);
 
     fetch("/api/supervisor/request-samples")
       .then((r) => {
@@ -66,14 +82,14 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     return groupedBySample.get(active.SampleID) || [];
   }, [active, groupedBySample]);
 
-  // Prefer DB IDs for a stable key
+  // Stable key
   const rowKey = (t, idx) =>
     t.TestID ??
     t.TestRequestID ??
     `${active?.SampleID ?? "sample"}-${t.TestName ?? "test"}-${idx}`;
 
-  // Seed UI from DB values
-  useEffect(() => {
+  // Seed UI from DB values (not a user edit)
+  const seedUiFromDB = () => {
     setUiByTest((prev) => {
       const next = {};
       activeTests.forEach((t, idx) => {
@@ -84,11 +100,21 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
             specimenCount:
               typeof t.NumberOfSpecimen === "number" ? t.NumberOfSpecimen : 1,
             action: t.TestStatus ?? "Record Created",
-            actionDate: null, // display-only timestamp when user changes action locally
+            actionDate: null, // set only when user changes action
           };
       });
       return next;
     });
+    setUserEdited(false);
+    setSaveMsg("");
+  };
+
+  useEffect(() => {
+    seedUiFromDB();
+    originalUiSnapshotRef.current = {};
+    // reset focus tracking when sample/tests change
+    focusCountRef.current = 0;
+    setHasFocusedEditor(false);
   }, [activeTests]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const statusTextClass = (status) => {
@@ -100,8 +126,12 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     return "text-primary";
   };
 
+  // Safe date formatter:
+  // - If already "YYYY-MM-DD", show as-is (avoids TZ shifts)
+  // - Else try to format with Date.
   const fmtDate = (d) => {
     if (!d) return "—";
+    if (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
     try {
       const dt = new Date(d);
       if (Number.isNaN(+dt)) return String(d);
@@ -111,39 +141,47 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     }
   };
 
-  // Helper: convert a JS date/ISO to local YYYY-MM-DD for backend
-  const toYMDLocal = (v) => {
-    if (!v) return null;
-    const d = new Date(v);
-    if (Number.isNaN(+d)) return null;
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  };
+  // AUTOSAVE: only when editing, there are changes, and no editor is focused
+  useEffect(() => {
+    if (!isEditing || !userEdited || activeTests.length === 0) return;
+    if (hasFocusedEditor) return; // don't save mid-interaction
 
-  // Save all tests in the active sample (now also sends DateAssigned)
-  const saveActiveSample = async () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      void saveActiveSample(/*fromAutosave*/ true);
+    }, 800);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uiByTest, userEdited, isEditing, hasFocusedEditor, active?.SampleID]);
+
+  // Save current edits (manual or autosave)
+  const saveActiveSample = async (fromAutosave = false) => {
     if (!active) return;
+    if (!userEdited) {
+      if (!fromAutosave) {
+        setIsEditing(false);
+        setSaveMsg("No changes.");
+      }
+      return;
+    }
 
     const updates = activeTests
       .map((t, idx) => {
         const k = rowKey(t, idx);
         const u = uiByTest[k] || {};
         return {
-          TestID: t.TestID, // required
+          TestID: t.TestID,
           TestStatus: u.action ?? null,
           NumberOfSpecimen:
             typeof u.specimenCount === "number" ? u.specimenCount : null,
-          DateAssigned: toYMDLocal(u.actionDate), // 'YYYY-MM-DD' or null
+          // If Action changed in this session, we have a local YYYY-MM-DD; else keep DB value
+          DateAssigned: u.actionDate ? u.actionDate : (t.DateAssigned ?? null),
         };
       })
       .filter((u) => typeof u.TestID !== "undefined" && u.TestID !== null);
-
-    if (updates.length === 0) {
-      setSaveMsg("No tests to save for this sample.");
-      return;
-    }
 
     setSaving(true);
     setErr(null);
@@ -157,15 +195,56 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
       const data = await r.json();
       if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
 
-      setSaveMsg(`Saved ${data.count ?? updates.length} update(s).`);
-      // Optional: refresh after save:
+      setSaveMsg(`All changes saved${data.count ? ` (${data.count})` : ""}.`);
+      setUserEdited(false);
+
+      // Per your flow: after autosave completes, show display (view) again
+      setIsEditing(false);
+
+      // Optionally fetch updated rows if you want to re-pull DateAssigned from DB
       // const reload = await fetch("/api/supervisor/request-samples");
-      // setRows(await reload.json());
+      // const all = await reload.json();
+      // const filtered = requestId
+      //   ? all.filter((r) => String(r.RequestID) === String(requestId))
+      //   : all;
+      // setRows(filtered);
     } catch (e) {
       setErr(e.message || "Failed to save.");
     } finally {
       setSaving(false);
     }
+  };
+
+  // Begin/Cancel edit
+  const beginEdit = () => {
+    originalUiSnapshotRef.current = JSON.parse(JSON.stringify(uiByTest));
+    setIsEditing(true);
+    setSaveMsg("");
+    setErr(null);
+    setUserEdited(false);
+  };
+  const cancelEdit = () => {
+    const snap = originalUiSnapshotRef.current || {};
+    if (Object.keys(snap).length) setUiByTest(snap);
+    else seedUiFromDB();
+    setIsEditing(false);
+    setUserEdited(false);
+    setSaveMsg("Changes discarded.");
+    // clear any pending autosave
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+  };
+
+  // Helpers to track focus/blur for each editable control
+  const handleFocus = () => {
+    focusCountRef.current += 1;
+    setHasFocusedEditor(focusCountRef.current > 0);
+    // cancel any pending autosave while focused
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+  };
+  const handleBlur = () => {
+    focusCountRef.current = Math.max(0, focusCountRef.current - 1);
+    setHasFocusedEditor(focusCountRef.current > 0);
+    // no immediate save here — effect will run and debounce after blur
   };
 
   return (
@@ -212,7 +291,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
         .debug-bar { font-size: 12px; color: #6c757d; padding: 4px 8px; }
       `}</style>
 
-      {/* LEFT: Samples list (Status column REMOVED) */}
+      {/* LEFT: Samples list */}
       <aside className="lm-sidebar d-flex flex-column">
         <div className="lm-sticky-head p-3 border-bottom bg-white">
           <h6 className="m-0">Samples</h6>
@@ -251,6 +330,10 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                         setActive(s);
                         setUiByTest({});
                         setSaveMsg("");
+                        setIsEditing(false);
+                        setUserEdited(false);
+                        focusCountRef.current = 0;
+                        setHasFocusedEditor(false);
                       }}
                       tabIndex={0}
                       onKeyDown={(e) => {
@@ -259,6 +342,10 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                           setActive(s);
                           setUiByTest({});
                           setSaveMsg("");
+                          setIsEditing(false);
+                          setUserEdited(false);
+                          focusCountRef.current = 0;
+                          setHasFocusedEditor(false);
                         }
                       }}
                       aria-selected={isActive}
@@ -282,7 +369,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
         </div>
       </aside>
 
-      {/* RIGHT: details (Status stays here in the summary) */}
+      {/* RIGHT: details */}
       <section className="lm-content">
         <div className="p-3 h-100 overflow-auto">
           {!active ? (
@@ -317,17 +404,39 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                 </div>
               </div>
 
-              {/* Controls row: Save */}
+              {/* Controls + status */}
               <div className="d-flex align-items-center gap-2 mt-3">
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={saveActiveSample}
-                  disabled={saving}
-                >
-                  {saving ? "Saving…" : "Save Changes"}
-                </button>
-                {saveMsg && <span className="text-success">{saveMsg}</span>}
-                {err && <span className="text-danger">{err}</span>}
+                {!isEditing ? (
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={beginEdit}
+                    disabled={saving}
+                  >
+                    Edit
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      className="btn btn-sm btn-outline-secondary"
+                      onClick={cancelEdit}
+                      disabled={saving}
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
+                <span className="text-muted small">
+                  {saving
+                    ? "Saving…"
+                    : isEditing && (userEdited || hasFocusedEditor)
+                    ? "Editing…"
+                    : saveMsg
+                    ? saveMsg
+                    : isEditing
+                    ? "Edit mode"
+                    : "View mode"}
+                </span>
+                {err && <span className="text-danger small">{err}</span>}
               </div>
 
               {/* TABLE 1: Borehole / field collection details */}
@@ -382,57 +491,77 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                             actionDate: null,
                           };
 
+                        // Prefer DB DateAssigned (YYYY-MM-DD), fallback to local actionDate (YYYY-MM-DD)
+                        const displayDate = t.DateAssigned || rowUi.actionDate;
+
                         return (
                           <tr key={k}>
                             <td>{t.TestName ?? "—"}</td>
                             <td>{t.AssignedTester ?? "—"}</td>
                             <td>{fmtDate(t.ResultDueDate)}</td>
 
-                            <td style={{ maxWidth: 120 }}>
-                              <select
-                                className="form-select form-select-sm"
-                                value={rowUi.specimenCount}
-                                onChange={(e) =>
-                                  setUiByTest((prev) => ({
-                                    ...prev,
-                                    [k]: {
-                                      ...prev[k],
-                                      specimenCount: Number(e.target.value) || 1,
-                                    },
-                                  }))
-                                }
-                              >
-                                {[1, 2, 3, 4, 5].map((n) => (
-                                  <option key={n} value={n}>{n}</option>
-                                ))}
-                              </select>
+                            <td style={{ maxWidth: 160 }}>
+                              {isEditing ? (
+                                <select
+                                  className="form-select form-select-sm"
+                                  value={rowUi.specimenCount}
+                                  onFocus={handleFocus}
+                                  onBlur={handleBlur}
+                                  onChange={(e) => {
+                                    setUiByTest((prev) => ({
+                                      ...prev,
+                                      [k]: {
+                                        ...prev[k],
+                                        specimenCount: Number(e.target.value) || 1,
+                                      },
+                                    }));
+                                    setUserEdited(true);
+                                    setSaveMsg("");
+                                  }}
+                                >
+                                  {[1, 2, 3, 4, 5].map((n) => (
+                                    <option key={n} value={n}>{n}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <span className="mono">{rowUi.specimenCount}</span>
+                              )}
                             </td>
 
-                            <td style={{ maxWidth: 170 }}>
-                              <select
-                                className="form-select form-select-sm"
-                                value={rowUi.action}
-                                onChange={(e) =>
-                                  setUiByTest((prev) => ({
-                                    ...prev,
-                                    [k]: {
-                                      ...prev[k],
-                                      action: e.target.value || null,
-                                      actionDate: new Date().toISOString(),
-                                    },
-                                  }))
-                                }
-                              >
-                                {/* If you want to allow NULL in DB from UI, add an empty option */}
-                                {/* <option value="">—</option> */}
-                                <option>Record Created</option>
-                                <option>Not Received</option>
-                                <option>Accepted</option>
-                                <option>Rejected</option>
-                              </select>
+                            <td style={{ maxWidth: 200 }}>
+                              {isEditing ? (
+                                <select
+                                  className="form-select form-select-sm"
+                                  value={rowUi.action}
+                                  onFocus={handleFocus}
+                                  onBlur={handleBlur}
+                                  onChange={(e) => {
+                                    setUiByTest((prev) => ({
+                                      ...prev,
+                                      [k]: {
+                                        ...prev[k],
+                                        action: e.target.value || null,
+                                        // record local date string to avoid timezone shift
+                                        actionDate: new Date().toLocaleDateString("en-CA"), // "YYYY-MM-DD"
+                                      },
+                                    }));
+                                    setUserEdited(true);
+                                    setSaveMsg("");
+                                  }}
+                                >
+                                  <option>Record Created</option>
+                                  <option>Not Received</option>
+                                  <option>Accepted</option>
+                                  <option>Rejected</option>
+                                </select>
+                              ) : (
+                                <span className={statusTextClass(rowUi.action)}>
+                                  {rowUi.action ?? "—"}
+                                </span>
+                              )}
                             </td>
 
-                            <td>{rowUi.actionDate ? fmtDate(rowUi.actionDate) : "—"}</td>
+                            <td>{displayDate ? fmtDate(displayDate) : "—"}</td>
                           </tr>
                         );
                       })

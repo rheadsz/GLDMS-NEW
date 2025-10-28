@@ -7,6 +7,8 @@ import SamplesDetails from "./SamplesDetails";
 const REQUESTS_API = "http://localhost:3001/api/supervisor/requests";
 const UPDATE_STATUS_API = "http://localhost:3001/api/supervisor/update-status"; // + /:id
 const SAMPLES_API = "http://localhost:3001/api/supervisor/samples";
+// NEW: base for summaries used to detect unassigned tests per request (left panel pre-check)
+const ASSIGNMENTS_API_BASE = "http://localhost:3001/api/assignments"; // will call `${BASE}/${id}/summary`
 
 function AppWithSidebar() {
   // Tabs
@@ -31,6 +33,10 @@ function AppWithSidebar() {
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [reqStatusFilter, setReqStatusFilter] = useState("All");
   const [reqSortOrder, setReqSortOrder] = useState("Newest");
+
+  // NEW: left-panel highlight state (requestId -> boolean)
+  const [needsAttention, setNeedsAttention] = useState({});
+  const [needsAttentionLoading, setNeedsAttentionLoading] = useState(false);
 
   // ===== Samples state =====
   const [samples, setSamples] = useState([]);
@@ -91,6 +97,61 @@ function AppWithSidebar() {
     }
   }, [activeTab]);
 
+  // ---------- Proactively compute which requests have unassigned tests ----------
+  // Helper to ask the backend for a request's summary and decide if any items are unassigned
+  async function fetchHasUnassigned(requestId) {
+    try {
+      const res = await fetch(`${ASSIGNMENTS_API_BASE}/${requestId}/summary`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const items = Array.isArray(data?.items) ? data.items : [];
+      // treat "unassigned" as !AssignedTester
+      return items.some((it) => !it?.AssignedTester);
+    } catch (e) {
+      console.error(`Summary check failed for ${requestId}:`, e);
+      // On failure, don't block UI—assume no highlight
+      return false;
+    }
+  }
+
+  // Fetch attention map whenever the assignments tab loads/refreshes or the list changes
+  useEffect(() => {
+    let cancelled = false;
+    async function refreshAttention(list) {
+      if (!Array.isArray(list) || list.length === 0) {
+        if (!cancelled) setNeedsAttention({});
+        return;
+      }
+      setNeedsAttentionLoading(true);
+
+      // OPTIONAL: simple concurrency control to avoid hammering the API
+      const CONCURRENCY = 5;
+      let idx = 0;
+      const resultMap = {};
+      async function worker() {
+        while (idx < list.length && !cancelled) {
+          const myIndex = idx++;
+          const req = list[myIndex];
+          const hasUnassigned = await fetchHasUnassigned(req.RequestID);
+          resultMap[req.RequestID] = hasUnassigned;
+        }
+      }
+      const workers = Array.from({ length: Math.min(CONCURRENCY, list.length) }, () => worker());
+      await Promise.all(workers);
+
+      if (!cancelled) {
+        setNeedsAttention(resultMap);
+        setNeedsAttentionLoading(false);
+      }
+    }
+
+    if (activeTab === "assignments") {
+      refreshAttention(requests);
+    }
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, requests]);
+
   // ---------- Assignments helpers ----------
   const updateStatus = async (id, newStatus) => {
     try {
@@ -119,6 +180,7 @@ function AppWithSidebar() {
     }
   };
 
+  // Filter + sort
   const filteredRequests = useMemo(() => {
     if (activeTab !== "assignments") return [];
     const list = (requests || []).filter((req) => {
@@ -135,6 +197,14 @@ function AppWithSidebar() {
 
   const activeLabel =
     TAB_CONFIG.find((t) => t.key === activeTab)?.label ?? "Panel";
+
+  // Keep map in sync when right panel changes a single request
+  const handleAttentionChange = (requestId, hasUnassigned) => {
+    setNeedsAttention((prev) => {
+      if (prev[requestId] === hasUnassigned) return prev;
+      return { ...prev, [requestId]: hasUnassigned };
+    });
+  };
 
   return (
     <div className="d-flex flex-column" style={{ height: "100vh" }}>
@@ -171,9 +241,13 @@ function AppWithSidebar() {
           .lm-sidebar { position: absolute; z-index: 1040; height: calc(100% - 52px); }
           .lm-content { flex-basis: 100%; }
         }
+
+        /* Left-row attention styling */
+        .needs-attention-row { border-left: 4px solid #dc3545; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: #dc3545; }
       `}</style>
 
-      {/* Top Bar: one hamburger for ALL tabs */}
+      {/* Top Bar */}
       <div className="lm-topbar px-3 py-2 d-flex align-items-center gap-2">
         <button
           type="button"
@@ -207,7 +281,7 @@ function AppWithSidebar() {
           <aside className="lm-sidebar d-flex flex-column">
             <div className="lm-sticky-head p-3 d-flex justify-content-between align-items-center border-bottom bg-white">
               <h5 className="m-0">Assignments</h5>
-              {reqLoading && <span className="spinner-border spinner-border-sm" />}
+              {(reqLoading || needsAttentionLoading) && <span className="spinner-border spinner-border-sm" title="Loading" />}
             </div>
 
             {/* Filters */}
@@ -246,9 +320,9 @@ function AppWithSidebar() {
             <div className="flex-grow-1 overflow-auto">
               <table className="table table-sm table-hover table-striped mb-0 align-middle tbl-assignments">
                 <colgroup>
-                  <col style={{ width: "20%" }} />
-                  <col style={{ width: "40%" }} />
-                  <col style={{ width: "40%" }} />
+                  <col style={{ width: "26%" }} />
+                  <col style={{ width: "37%" }} />
+                  <col style={{ width: "37%" }} />
                 </colgroup>
                 <thead className="table-light sticky-top" style={{ top: 0 }}>
                   <tr>
@@ -267,10 +341,11 @@ function AppWithSidebar() {
                   ) : (
                     filteredRequests.map((req) => {
                       const isActive = selectedRequest?.RequestID === req.RequestID;
+                      const needs = !!needsAttention[req.RequestID];
                       return (
                         <tr
                           key={req.RequestID}
-                          className={isActive ? "table-primary" : ""}
+                          className={`${isActive ? "table-primary" : ""} ${needs ? "needs-attention-row" : ""}`}
                           style={{ cursor: "pointer" }}
                           onClick={() => setSelectedRequest(req)}
                           tabIndex={0}
@@ -281,9 +356,11 @@ function AppWithSidebar() {
                             }
                           }}
                           aria-selected={isActive}
+                          title={needs ? "This request has unassigned tests" : undefined}
                         >
                           <td className="mono text-center">
                             <span className="linklike">{req.RequestID}</span>
+                            {needs && <span className="ms-2 align-middle dot" />}
                           </td>
                           <td className="mono text-start">
                             <span className="linklike">{req.EfisProjectId ?? "—"}</span>
@@ -303,7 +380,12 @@ function AppWithSidebar() {
           {/* RIGHT: Assignment Details */}
           <section className="lm-content">
             <div className="p-4 h-100 overflow-auto">
-              <AssignmentDetails request={selectedRequest} onUpdateStatus={() => {}} />
+              <AssignmentDetails
+                request={selectedRequest}
+                onUpdateStatus={() => {}}
+                // Right panel still reports changes live for the selected request
+                onRequestAttentionChange={handleAttentionChange}
+              />
             </div>
           </section>
         </div>

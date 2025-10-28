@@ -1,10 +1,96 @@
 // routes/assignments.js
 const express = require("express");
 
+/* --------------------- UTIL: normalize for robust diffs --------------------- */
+const normStr = (v) => (v == null ? null : String(v).trim());
+const normDate = (v) => {
+  if (!v) return null;
+  // Accept "YYYY-MM-DD" or ISO, return "YYYY-MM-DD"
+  const s = String(v);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(s);
+  if (Number.isNaN(+d)) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
+// Build a shallow diff across fields we care about, with normalization
+function buildDiff(before, after) {
+  const fields = [
+    "AssignedTester",
+    "ResultDueDate",
+    "ReportDueDate",
+    "AssignmentNotes",
+    "Status",
+  ];
+  const diff = {};
+  fields.forEach((k) => {
+    let from = before?.[k] ?? null;
+    let to = after?.[k] ?? null;
+
+    // normalize per field type
+    if (k === "ResultDueDate" || k === "ReportDueDate") {
+      from = normDate(from);
+      to = normDate(to);
+    } else {
+      from = normStr(from);
+      to = normStr(to);
+    }
+    if ((from ?? "") !== (to ?? "")) {
+      diff[k] = { from, to };
+    }
+  });
+  return diff;
+}
+
+/* --------------------- resolve current user from request -------------------- */
+function resolveUser(db, req) {
+  return new Promise((resolve) => {
+    // Prefer session (set by /api/login)
+    if (req.session?.userId && req.session?.userName) {
+      return resolve({ UserID: req.session.userId, UserName: req.session.userName });
+    }
+    // Optional: if you've attached req.user upstream, honor it
+    if (req.user?.UserID && req.user?.UserName) {
+      return resolve({ UserID: req.user.UserID, UserName: req.user.UserName });
+    }
+    // Dev/alternate fallback via headers
+    const hId = req.headers["x-user-id"];
+    const hName = req.headers["x-user-name"];
+    if (hId && hName) {
+      return resolve({ UserID: Number(hId) || 0, UserName: String(hName) });
+    }
+    resolve(null);
+  });
+}
+
+/* -------------- ensure assignment_history table exists on init -------------- */
+function ensureHistoryTable(db) {
+  const ddl = `
+    CREATE TABLE IF NOT EXISTS assignment_history (
+      HistoryID INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      TestID INT UNSIGNED NOT NULL,
+      ChangedByUserID MEDIUMINT UNSIGNED NOT NULL,
+      ChangedByUserName VARCHAR(50) NOT NULL,
+      ChangedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      Changes JSON NOT NULL,
+      PRIMARY KEY (HistoryID),
+      KEY idx_hist_test (TestID),
+      KEY idx_hist_user (ChangedByUserID)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `;
+  db.query(ddl, (e) => {
+    if (e) console.error("[assignment_history] DDL error:", e.message);
+  });
+}
+
 module.exports = (db) => {
   const router = express.Router();
+  ensureHistoryTable(db); // <-- make sure table exists
 
-  // ---------- helpers ----------
+  /* ------------------------------- helpers ------------------------------- */
   const toUiRow = (r) => ({
     RequestID: r.RequestID,
     EfisProjectId: r.EfisProjectId ?? null,
@@ -37,7 +123,6 @@ module.exports = (db) => {
         EfisProjectId: efis,
         CreatedBy: "—",
         Status: "—",
-        // NEW: counts present even when empty
         TotalTests: 0,
         AssignedCount: 0,
         SubmittedCount: 0,
@@ -46,7 +131,7 @@ module.exports = (db) => {
     });
   }
 
-  // ---------- main: GET /api/assignments/:requestId ----------
+  /* ---------------- GET /api/assignments/:requestId ---------------- */
   router.get("/assignments/:requestId", (req, res) => {
     const requestId = Number(req.params.requestId);
     if (!Number.isInteger(requestId))
@@ -92,8 +177,6 @@ module.exports = (db) => {
 
       if (rowsNew && rowsNew.length > 0) {
         const efis = rowsNew[0].EfisProjectId ?? "—";
-
-        // --- NEW: compute counts on the fly from current rows ---
         const testRows = rowsNew.filter((r) => r.TestID != null);
 
         const TotalTests = testRows.length;
@@ -101,7 +184,6 @@ module.exports = (db) => {
           (n, r) => n + (r.AssignedTester && String(r.AssignedTester).trim() !== "" ? 1 : 0),
           0
         );
-        // If your "submitted" state is stored in pt.Status == 'Submitted'
         const SubmittedCount = testRows.reduce(
           (n, r) => n + (r.TestStatus === "Submitted" ? 1 : 0),
           0
@@ -112,18 +194,15 @@ module.exports = (db) => {
           EfisProjectId: efis,
           CreatedBy: rowsNew[0].CreatedBy ?? "—",
           Status: rowsNew[0].RequestStatus ?? "—",
-          // NEW: expose counts to the UI
           TotalTests,
           AssignedCount,
           SubmittedCount,
         };
 
         const items = testRows.map(toUiRow);
-
         return res.json({ header, items });
       }
 
-      // -------- Legacy fallback --------
       const sqlLegacy = `
         SELECT
           tr.RequestID,
@@ -160,7 +239,6 @@ module.exports = (db) => {
           EfisProjectId: rowsOld[0].EfisProjectId ?? "—",
           CreatedBy: rowsOld[0].CreatedBy ?? "—",
           Status: rowsOld[0].RequestStatus ?? "—",
-          // NEW: legacy sets have no tester/status rows -> counts 0
           TotalTests: rowsOld.length,
           AssignedCount: 0,
           SubmittedCount: 0,
@@ -171,8 +249,7 @@ module.exports = (db) => {
     });
   });
 
-  // ---------- counts-only convenience: GET /api/assignments/:requestId/counts ----------
-  // Returns { requestId, total, assigned, submitted }
+  /* ------------- counts/debug/testers ------------- */
   router.get("/assignments/:requestId/counts", (req, res) => {
     const requestId = Number(req.params.requestId);
     if (!Number.isInteger(requestId))
@@ -198,7 +275,6 @@ module.exports = (db) => {
     });
   });
 
-  // ---------- quick diagnostics ----------
   router.get("/assignments/:requestId/debug", (req, res) => {
     const requestId = Number(req.params.requestId);
     if (!Number.isInteger(requestId))
@@ -232,7 +308,6 @@ module.exports = (db) => {
     });
   });
 
-  // ---------- testers list ----------
   router.get("/testers", (_req, res) => {
     const sql = `
       SELECT UserName
@@ -250,120 +325,165 @@ module.exports = (db) => {
     });
   });
 
-  // ---------- assign ----------
-  router.post("/assignments/:testId/assign", (req, res) => {
+  /* -------------------- POST /assignments/:testId/assign --------------------- */
+  router.post("/assignments/:testId/assign", async (req, res) => {
     const testId = Number(req.params.testId);
     if (!Number.isInteger(testId))
       return res.status(400).json({ error: "Invalid test id" });
 
+    const user = await resolveUser(db, req);
+    if (!user) return res.status(401).json({ error: "Not authenticated." });
+
     const { assignedTester, resultDueDate, reportDueDate, notes } = req.body || {};
-    const sets = [];
-    const params = [];
 
-    if (assignedTester !== undefined) {
-      sets.push("AssignedTester = ?");
-      params.push(assignedTester || null);
-    }
-    if (resultDueDate !== undefined) {
-      sets.push("ResultDueDate = ?");
-      params.push(resultDueDate || null);
-    }
-    if (reportDueDate !== undefined) {
-      sets.push("ReportDueDate = ?");
-      params.push(reportDueDate || null);
-    }
-    if (notes !== undefined) {
-      sets.push("AssignmentNotes = ?");
-      params.push(notes || null);
-    }
-
-    if (sets.length === 0) return res.status(400).json({ error: "No fields to update" });
-
-    // always move test to In Progress unless already Completed
-    sets.push("Status = IF(Status='Completed','Completed','In Progress')");
-    sets.push("UpdatedAt = CURRENT_TIMESTAMP");
-
-    const sqlUpdateTest = `UPDATE project_tests SET ${sets.join(", ")} WHERE TestID = ?`;
-    const paramsTest = [...params, testId];
-
-    db.query(sqlUpdateTest, paramsTest, (err, result) => {
-      if (err) {
-        console.error("POST /assignments/:testId/assign error:", err);
+    // Fetch BEFORE state
+    const sqlBefore = `
+      SELECT TestID, AssignedTester, ResultDueDate, ReportDueDate, AssignmentNotes, Status
+      FROM project_tests
+      WHERE TestID = ?
+      LIMIT 1
+    `;
+    db.query(sqlBefore, [testId], (e0, r0) => {
+      if (e0) {
+        console.error("assign SELECT before error:", e0);
         return res.status(500).json({ error: "Server error" });
       }
-      if (result.affectedRows === 0) {
-        return res.status(404).json({ error: "Test not found" });
+      if (!r0 || r0.length === 0) return res.status(404).json({ error: "Test not found" });
+
+      const before = {
+        AssignedTester: r0[0].AssignedTester ?? null,
+        ResultDueDate: r0[0].ResultDueDate ?? null,
+        ReportDueDate: r0[0].ReportDueDate ?? null,
+        AssignmentNotes: r0[0].AssignmentNotes ?? null,
+        Status: r0[0].Status ?? null,
+      };
+
+      // Build AFTER state (apply provided values, keep others)
+      const after = {
+        AssignedTester: assignedTester !== undefined ? normStr(assignedTester) : before.AssignedTester,
+        ResultDueDate: resultDueDate !== undefined ? normDate(resultDueDate) : normDate(before.ResultDueDate),
+        ReportDueDate: reportDueDate !== undefined ? normDate(reportDueDate) : normDate(before.ReportDueDate),
+        AssignmentNotes: notes !== undefined ? normStr(notes) : before.AssignmentNotes,
+        Status: before.Status || "Requested",
+      };
+
+      // Auto-progress status if we changed anything (unless already Completed)
+      if (after.Status !== "Completed") {
+        if (
+          assignedTester !== undefined ||
+          resultDueDate !== undefined ||
+          reportDueDate !== undefined ||
+          notes !== undefined
+        ) {
+          after.Status = "In Progress";
+        }
       }
 
-      // 1) Identify the parent RequestID for this TestID
-      const sqlGetReq = `SELECT RequestID FROM project_tests WHERE TestID = ?`;
-      db.query(sqlGetReq, [testId], (e0, r0) => {
-        if (e0) {
-          console.error("assign: get RequestID error:", e0);
-          return res.json({ ok: true, TestID: testId, requestStatusUpdated: false });
+      const changes = buildDiff(before, after);
+      const hasChanges = Object.keys(changes).length > 0;
+
+      if (!hasChanges) {
+        // No real change -> do not insert history
+        return res.json({ ok: true, updated: 0, noChange: true });
+      }
+
+      // UPDATE record (also stamp UpdatedBy)
+      const sets = [
+        "AssignedTester = ?",
+        "ResultDueDate = ?",
+        "ReportDueDate = ?",
+        "AssignmentNotes = ?",
+        "Status = ?",
+        "UpdatedBy = ?",
+        "UpdatedAt = CURRENT_TIMESTAMP",
+      ];
+      const params = [
+        after.AssignedTester,
+        after.ResultDueDate,
+        after.ReportDueDate,
+        after.AssignmentNotes,
+        after.Status,
+        user.UserName,
+      ];
+
+      const sqlUpdate = `UPDATE project_tests SET ${sets.join(", ")} WHERE TestID = ?`;
+      db.query(sqlUpdate, [...params, testId], (e1, r1) => {
+        if (e1) {
+          console.error("POST /assignments/:testId/assign UPDATE error:", e1);
+          return res.status(500).json({ error: "Server error" });
         }
-        const requestId = r0?.[0]?.RequestID;
-        if (!requestId) {
-          return res.json({ ok: true, TestID: testId, requestStatusUpdated: false });
+        if (r1.affectedRows === 0) {
+          return res.status(404).json({ error: "Test not found" });
         }
 
-        // 2) Count total tests vs assigned tests for that RequestID
-        const sqlCounts = `
-          SELECT
-            COUNT(*) AS total,
-            SUM(CASE WHEN AssignedTester IS NOT NULL AND AssignedTester <> '' THEN 1 ELSE 0 END) AS assigned
-          FROM project_tests
-          WHERE RequestID = ?
+        // INSERT history
+        const sqlHist = `
+          INSERT INTO assignment_history
+            (TestID, ChangedByUserID, ChangedByUserName, ChangedAt, Changes)
+          VALUES (?, ?, ?, NOW(), ?)
         `;
-        db.query(sqlCounts, [requestId], (e1, r1) => {
-          if (e1) {
-            console.error("assign: count tests error:", e1);
-            return res.json({ ok: true, TestID: testId, requestStatusUpdated: false });
-          }
-
-          const total = Number(r1?.[0]?.total || 0);
-          const assigned = Number(r1?.[0]?.assigned || 0);
-          const allAssigned = total > 0 && assigned === total;
-
-          if (!allAssigned) {
-            // Do not update the request status unless ALL tests are assigned
-            return res.json({
-              ok: true,
-              TestID: testId,
-              requestStatusUpdated: false,
-              totals: { total, assigned }
-            });
-          }
-
-          // 3) All tests assigned -> set parent request to 'Assigned'
-          const sqlSetRequest = `
-            UPDATE project_requests
-            SET Status = 'Assigned'
-            WHERE RequestID = ? AND Status <> 'Assigned'
-          `;
-          db.query(sqlSetRequest, [requestId], (e2, r2) => {
+        db.query(
+          sqlHist,
+          [testId, user.UserID, user.UserName, JSON.stringify(changes)],
+          (e2) => {
             if (e2) {
-              console.error("assign: set request Assigned error:", e2);
-              return res.json({
-                ok: true,
-                TestID: testId,
-                requestStatusUpdated: false,
-                totals: { total, assigned }
-              });
+              console.error("assign INSERT history error:", e2);
+              // keep going; logging failure shouldn't fail the main response
             }
-            res.json({
-              ok: true,
-              TestID: testId,
-              requestStatusUpdated: r2.affectedRows > 0,
-              totals: { total, assigned }
+
+            // Set parent request to Assigned if all tests assigned
+            const sqlGetReq = `SELECT RequestID FROM project_tests WHERE TestID = ?`;
+            db.query(sqlGetReq, [testId], (e3, r3) => {
+              if (e3) {
+                console.error("assign: get RequestID error:", e3);
+                return res.json({ ok: true, TestID: testId, requestStatusUpdated: false });
+              }
+              const requestId = r3?.[0]?.RequestID;
+              if (!requestId) {
+                return res.json({ ok: true, TestID: testId, requestStatusUpdated: false });
+              }
+
+              const sqlCounts = `
+                SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN AssignedTester IS NOT NULL AND TRIM(AssignedTester) <> '' THEN 1 ELSE 0 END) AS assigned
+                FROM project_tests
+                WHERE RequestID = ?
+              `;
+              db.query(sqlCounts, [requestId], (e4, r4) => {
+                if (e4) {
+                  console.error("assign: count tests error:", e4);
+                  return res.json({ ok: true, TestID: testId, requestStatusUpdated: false });
+                }
+
+                const total = Number(r4?.[0]?.total || 0);
+                const assigned = Number(r4?.[0]?.assigned || 0);
+                const allAssigned = total > 0 && assigned === total;
+
+                if (!allAssigned) {
+                  return res.json({ ok: true, TestID: testId, requestStatusUpdated: false, totals: { total, assigned } });
+                }
+
+                const sqlSetRequest = `
+                  UPDATE project_requests
+                  SET Status = 'Assigned'
+                  WHERE RequestID = ? AND Status <> 'Assigned'
+                `;
+                db.query(sqlSetRequest, [requestId], (e5, r5) => {
+                  if (e5) {
+                    console.error("assign: set request Assigned error:", e5);
+                    return res.json({ ok: true, TestID: testId, requestStatusUpdated: false, totals: { total, assigned } });
+                  }
+                  res.json({ ok: true, TestID: testId, requestStatusUpdated: r5.affectedRows > 0, totals: { total, assigned } });
+                });
+              });
             });
-          });
-        });
+          }
+        );
       });
     });
   });
 
-  // ---------- summary ----------
+  /* ---------------------- summary ---------------------- */
   router.get("/assignments/:requestId/summary", (req, res) => {
     const requestId = Number(req.params.requestId);
     if (!Number.isInteger(requestId)) {
@@ -443,6 +563,38 @@ module.exports = (db) => {
       });
     });
   });
+
+  /* ------------------- GET /assignments/:testId/history ------------------ */
+  router.get("/assignments/:testId/history", (req, res) => {
+    const testId = Number(req.params.testId);
+    if (!Number.isInteger(testId)) {
+      return res.status(400).json({ error: "Invalid test id" });
+    }
+    const sql = `
+      SELECT HistoryID, TestID, ChangedByUserID, ChangedByUserName, ChangedAt, Changes
+      FROM assignment_history
+      WHERE TestID = ?
+      ORDER BY ChangedAt DESC, HistoryID DESC
+    `;
+    db.query(sql, [testId], (err, rows) => {
+      if (err) {
+        console.error("GET /assignments/:testId/history error:", err);
+        return res.status(500).json({ error: "Server error" });
+      }
+      const items = (rows || []).map(r => ({
+        HistoryID: r.HistoryID,
+        TestID: r.TestID,
+        ChangedBy: r.ChangedByUserName,
+        ChangedAt: r.ChangedAt,
+        Changes: typeof r.Changes === "string" ? safeParseJSON(r.Changes) : r.Changes,
+      }));
+      return res.json({ items });
+    });
+  });
+
+  function safeParseJSON(s) {
+    try { return JSON.parse(s); } catch { return {}; }
+  }
 
   return router;
 };

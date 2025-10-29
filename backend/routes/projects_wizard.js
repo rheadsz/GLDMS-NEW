@@ -120,52 +120,26 @@ module.exports = (db) => {
               const projectId = result.insertId;
               console.log(`Project created with ID: ${projectId}`);
               
-              // Get the current year (last 2 digits)
-              const year = new Date().getFullYear().toString().slice(-2);
-              
-              // Get the last request ID for this year
-              const getLastRequestQuery = `
-                SELECT RequestID FROM project_requests 
-                WHERE RequestID LIKE CONCAT('GL ', ?, '-%')
-                ORDER BY RequestID DESC 
-                LIMIT 1
+              // Create a new request
+              const requestQuery = `
+                INSERT INTO project_requests (ProjectID, Status, RequestingUser)
+                VALUES (?, 'Submitted', ?)
               `;
               
-              db.query(getLastRequestQuery, [year], (err, lastRequestResult) => {
-                if (err) {
-                  console.error('Error getting last request ID:', err);
-                  return reject(err);
-                }
-                
-                let sequentialNumber = 1;
-                if (lastRequestResult.length > 0 && lastRequestResult[0].RequestID) {
-                  const lastNumber = lastRequestResult[0].RequestID.split('-')[1];
-                  sequentialNumber = parseInt(lastNumber) + 1;
-                }
-                
-                const requestId = `GL ${year}-${sequentialNumber.toString().padStart(3, '0')}`;
-                console.log(`Generated request ID: ${requestId}`);
-                
-                // Create a new request with formatted RequestID
-                const requestQuery = `
-                  INSERT INTO project_requests (RequestID, ProjectID, Status, RequestingUser)
-                  VALUES (?, ?, 'Submitted', ?)
-                `;
-                
-                db.query(
-                  requestQuery,
-                  [requestId, projectId, userName],
-                  (err, requestResult) => {
-                    if (err) {
-                      console.error('Error creating request:', err);
-                      return reject(err);
-                    }
-                    
-                    console.log(`Request created with ID: ${requestId}`);
-                    resolve({ projectId, requestId });
+              db.query(
+                requestQuery,
+                [projectId, userName],
+                (err, requestResult) => {
+                  if (err) {
+                    console.error('Error creating request:', err);
+                    return reject(err);
                   }
-                );
-              });
+                  
+                  const requestId = requestResult.insertId;
+                  console.log(`Request created with ID: ${requestId}`);
+                  resolve({ projectId, requestId });
+                }
+              );
             }
           );
         });

@@ -8,6 +8,7 @@ module.exports = (db) => {
     
     const sql = `
       SELECT 
+        p.ProjectID as DBProjectID,
         p.EfisProjectId as ProjectID, 
         p.EfisProjectId,
         p.ProjectName,

@@ -1,0 +1,118 @@
+/* Project Details Modal Styling */
+
+.tree-structure {
+  font-size: 0.95rem;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.cursor-pointer:hover {
+  background-color: #f8f9fa !important;
+}
+
+/* Smooth transitions for expand/collapse */
+.tree-structure i.bi-chevron-down,
+.tree-structure i.bi-chevron-right {
+  transition: transform 0.2s ease;
+}
+
+/* Add subtle shadow on hover for interactive elements */
+.tree-structure .border:hover {
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Make the modal scrollable */
+.modal-dialog-scrollable .modal-body {
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+/* Improve spacing in tree structure */
+.tree-structure > div {
+  margin-bottom: 0.75rem;
+}
+
+/* Style for nested levels */
+.ms-4 {
+  border-left: 2px solid #e9ecef;
+  padding-left: 1rem;
+}
+
+/* Badge styling */
+.badge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+
+/* List group styling for tests */
+.list-group-item {
+  padding: 0.75rem 1rem;
+  border: 1px solid #dee2e6;
+}
+
+.list-group-item:first-child {
+  border-top-left-radius: 0.25rem;
+  border-top-right-radius: 0.25rem;
+}
+
+.list-group-item:last-child {
+  border-bottom-left-radius: 0.25rem;
+  border-bottom-right-radius: 0.25rem;
+}
+
+/* Icon colors */
+.text-primary {
+  color: #0d6efd !important;
+}
+
+.text-success {
+  color: #198754 !important;
+}
+
+.text-warning {
+  color: #ffc107 !important;
+}
+
+.text-info {
+  color: #0dcaf0 !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .modal-xl {
+    max-width: 95%;
+  }
+  
+  .tree-structure {
+    font-size: 0.85rem;
+  }
+}
+
+/* Animation for modal appearance */
+.modal.show {
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Improve button styling in table */
+.btn-sm.btn-outline-primary {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+  border-radius: 0.2rem;
+}
+
+.btn-sm.btn-outline-primary:hover {
+  background-color: #0d6efd;
+  color: white;
+}

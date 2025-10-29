@@ -80,8 +80,8 @@ module.exports = (db) => {
           const county = ProjectInfo.county || '';
           // Convert route to NULL if empty (it's a numeric field)
           const route = ProjectInfo.route && ProjectInfo.route !== '' ? parseInt(ProjectInfo.route, 10) : null;
-          const pmFrom = ProjectInfo.pmFrom || '';
-          const pmTo = ProjectInfo.pmTo || '';
+          const pmFrom = ProjectInfo.pmStart || ProjectInfo.pmFrom || '';
+          const pmTo = ProjectInfo.pmEnd || ProjectInfo.pmTo || '';
           const structureNo = ProjectInfo.structureNo || '';
           // Set efisProjectId from projectID field or as a fallback use efisProjectId
           const efisProjectId = ProjectInfo.projectID || ProjectInfo.efisProjectId || '';
@@ -120,26 +120,52 @@ module.exports = (db) => {
               const projectId = result.insertId;
               console.log(`Project created with ID: ${projectId}`);
               
-              // Create a new request
-              const requestQuery = `
-                INSERT INTO project_requests (ProjectID, Status, RequestingUser)
-                VALUES (?, 'Submitted', ?)
+              // Get the current year (last 2 digits)
+              const year = new Date().getFullYear().toString().slice(-2);
+              
+              // Get the last request ID for this year
+              const getLastRequestQuery = `
+                SELECT RequestID FROM project_requests 
+                WHERE RequestID LIKE CONCAT('GL ', ?, '-%')
+                ORDER BY RequestID DESC 
+                LIMIT 1
               `;
               
-              db.query(
-                requestQuery,
-                [projectId, userName], // Use the already defined userName variable
-                (err, requestResult) => {
-                  if (err) {
-                    console.error('Error creating request:', err);
-                    return reject(err);
-                  }
-                  
-                  const requestId = requestResult.insertId;
-                  console.log(`Request created with ID: ${requestId}`);
-                  resolve({ projectId, requestId });
+              db.query(getLastRequestQuery, [year], (err, lastRequestResult) => {
+                if (err) {
+                  console.error('Error getting last request ID:', err);
+                  return reject(err);
                 }
-              );
+                
+                let sequentialNumber = 1;
+                if (lastRequestResult.length > 0 && lastRequestResult[0].RequestID) {
+                  const lastNumber = lastRequestResult[0].RequestID.split('-')[1];
+                  sequentialNumber = parseInt(lastNumber) + 1;
+                }
+                
+                const requestId = `GL ${year}-${sequentialNumber.toString().padStart(3, '0')}`;
+                console.log(`Generated request ID: ${requestId}`);
+                
+                // Create a new request with formatted RequestID
+                const requestQuery = `
+                  INSERT INTO project_requests (RequestID, ProjectID, Status, RequestingUser)
+                  VALUES (?, ?, 'Submitted', ?)
+                `;
+                
+                db.query(
+                  requestQuery,
+                  [requestId, projectId, userName],
+                  (err, requestResult) => {
+                    if (err) {
+                      console.error('Error creating request:', err);
+                      return reject(err);
+                    }
+                    
+                    console.log(`Request created with ID: ${requestId}`);
+                    resolve({ projectId, requestId });
+                  }
+                );
+              });
             }
           );
         });
@@ -512,10 +538,10 @@ module.exports = (db) => {
               // Create a sample on the fly if it doesn't exist
               function ensureSampleExists(boreholeNum) {
                 return new Promise((resolve, reject) => {
-                  // First check if any boreholes exist with this number
+                  // First check if any boreholes exist with this number FOR THIS REQUEST
                   db.query(
-                    'SELECT BoreholeID FROM project_boreholes WHERE BoreholeNumber = ?',
-                    [boreholeNum],
+                    'SELECT BoreholeID FROM project_boreholes WHERE BoreholeNumber = ? AND RequestID = ?',
+                    [boreholeNum, requestId],
                     (err, boreholeResult) => {
                       if (err) {
                         console.error('Error finding borehole for sample creation:', err);
@@ -523,16 +549,16 @@ module.exports = (db) => {
                       }
                       
                       if (boreholeResult.length === 0) {
-                        console.warn(`No borehole found with ID ${boreholeNum} for sample creation`);
+                        console.warn(`No borehole found with number ${boreholeNum} for RequestID ${requestId}`);
                         return resolve(null);
                       }
                       
                       const bhId = boreholeResult[0].BoreholeID;
                       
-                      // Check if any samples exist for this borehole
+                      // Check if any samples exist for this borehole IN THIS REQUEST
                       db.query(
-                        'SELECT SampleID FROM project_samples WHERE BoreholeID = ? LIMIT 1',
-                        [bhId],
+                        'SELECT SampleID FROM project_samples WHERE BoreholeID = ? AND RequestID = ? LIMIT 1',
+                        [bhId, requestId],
                         (err, sampleResult) => {
                           if (err) {
                             console.error('Error checking for existing samples:', err);
@@ -541,7 +567,7 @@ module.exports = (db) => {
                           
                           if (sampleResult.length > 0) {
                             // Sample exists, return its ID
-                            console.log(`Found existing sample ID ${sampleResult[0].SampleID} for borehole ${boreholeNum}`);
+                            console.log(`Found existing sample ID ${sampleResult[0].SampleID} for borehole ${boreholeNum} in request ${requestId}`);
                             return resolve(sampleResult[0].SampleID);
                           }
                           
@@ -578,19 +604,20 @@ module.exports = (db) => {
               
               // Standard lookup for existing samples
               function findExistingSample(boreholeNum) {
-                // Find the sample ID
+                // Find the sample ID - MUST filter by RequestID to get the correct sample
                 const sampleQuery = `
                   SELECT s.SampleID 
                   FROM project_samples s
                   JOIN project_boreholes b ON s.BoreholeID = b.BoreholeID
-                  WHERE b.BoreholeNumber = ?
+                  WHERE b.BoreholeNumber = ? AND s.RequestID = ?
+                  LIMIT 1
                 `;
                 
-                console.log('Looking for samples with borehole number:', boreholeNum);
+                console.log('Looking for samples with borehole number:', boreholeNum, 'and RequestID:', requestId);
                 
                 db.query(
                   sampleQuery,
-                  [boreholeNum],
+                  [boreholeNum, requestId],
                   (err, sampleResult) => {
                     if (err) {
                       console.error('Error finding sample:', err);
@@ -598,12 +625,12 @@ module.exports = (db) => {
                     }
                     
                     if (sampleResult.length === 0) {
-                      console.warn(`Sample not found for borehole: ${boreholeNum}`);
+                      console.warn(`Sample not found for borehole: ${boreholeNum} and RequestID: ${requestId}`);
                       return resolveTestRow(); // Skip this test row
                     }
                     
                     const sampleId = sampleResult[0].SampleID;
-                    console.log(`Found sample ID ${sampleId} for borehole ${boreholeNum}`);
+                    console.log(`Found sample ID ${sampleId} for borehole ${boreholeNum} in request ${requestId}`);
                     processSampleTests(sampleId);
                   }
                 );

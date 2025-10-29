@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-function AssignmentDetails({ request, testers: testersProp, onRequestAttentionChange }) {
+function AssignmentDetails({
+  request,
+  testers: testersProp,
+  onRequestAttentionChange,
+}) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [testers, setTesters] = useState([]);
@@ -12,19 +16,25 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
   // Track assigned rows + selection + bulk state
   const [assignedRows, setAssignedRows] = useState(() => new Set());
   const [selected, setSelected] = useState(() => new Set());
-  const [bulkSubmitting, setBulkSubmitting] = useState(false);
 
   // Editable rows: on load -> only UNASSIGNED are editable
   const [editing, setEditing] = useState(() => new Set());
 
-  // Assign modal state
+  // Assign modal (single row)
   const [assignModal, setAssignModal] = useState({
     open: false,
     testId: null,
     form: { testerId: "", resultDueDate: "", reportDueDate: "", comments: "" },
   });
 
-  // History modal state
+  // NEW: Bulk assign modal (for many rows)
+  const [bulkModal, setBulkModal] = useState({
+    open: false,
+    form: { testerId: "", resultDueDate: "", reportDueDate: "", comments: "" },
+    busy: false,
+  });
+
+  // History modal
   const [historyModal, setHistoryModal] = useState({
     open: false,
     testId: null,
@@ -133,7 +143,9 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
       })
       .finally(() => mounted && setLoading(false));
 
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [request?.RequestID]);
 
   // Load testers
@@ -145,7 +157,9 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
           ? testersProp
           : testersProp.map((t) => t?.name || t?.UserName).filter(Boolean);
       setTesters(normalized);
-      return () => { mounted = false; };
+      return () => {
+        mounted = false;
+      };
     }
     if (!request?.RequestID) return;
     fetch(`/api/testers`)
@@ -165,16 +179,20 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
         console.error("testers fetch error:", e);
         if (mounted) setError("Couldn’t load testers.");
       });
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [request?.RequestID, testersProp]);
 
-  // Derived: counts
-  const assignedCount = useMemo(() => rows.filter((r) => !!r.AssignedTester).length, [rows]);
-  const totalCount = useMemo(() => rows.length, [rows]);
-  const unassignedCount = totalCount - assignedCount;
-
   // Derived: has any unassigned rows?
-  const hasUnassigned = useMemo(() => unassignedCount > 0, [unassignedCount]);
+  const hasUnassigned = useMemo(() => {
+    if (!rows?.length) return false;
+    return rows.some((r, i) => {
+      const id = getItemId(r, i);
+      const isAssigned = assignedRows.has(id) || !!r.AssignedTester;
+      return !isAssigned;
+    });
+  }, [rows, assignedRows]);
 
   // Notify parent whenever unassigned status changes
   useEffect(() => {
@@ -191,30 +209,28 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
     }));
   }
 
-  // Assign (or Save edits) for a single row
+  // Assign single row (initial assign)
   async function handleAssign(testId) {
-    const isEditing = editing.has(testId);
-    if (assignedRows.has(testId) && !isEditing) {
-      setError("This test is already assigned. Click Edit to make changes.");
+    if (assignedRows.has(testId)) {
+      setError("This test is already assigned. Use Edit to make changes.");
       return;
     }
 
     const d = drafts[testId] || {};
-    if (!d.testerId) { setError("Please select a tester."); return; }
+    if (!d.testerId) {
+      setError("Please select a tester.");
+      return;
+    }
     if (!d.resultDueDate && !d.reportDueDate) {
-      setError("Add a result or report due date."); return;
+      setError("Add a result or report due date.");
+      return;
     }
 
     try {
       setSubmitting((s) => ({ ...s, [testId]: true }));
       const res = await fetch(`/api/assignments/${testId}/assign`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          // If you need dev headers, uncomment next 2 lines and set valid values:
-          // "x-user-id": "2",
-          // "x-user-name": "supervisor1",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           assignedTester: d.testerId,
           resultDueDate: d.resultDueDate || null,
@@ -222,117 +238,38 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
           notes: d.comments || null,
         }),
       });
-
-      if (!res.ok) {
-        const msg = await res.text();
-        throw new Error(`HTTP ${res.status} ${msg}`);
-      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       await res.json();
 
       setAssignedRows((prev) => new Set([...prev, testId]));
-      setEditing((prev) => { const next = new Set(prev); next.delete(testId); return next; });
-      setSelected((prev) => { const next = new Set(prev); next.delete(testId); return next; });
-
-      setNotice(isEditing ? "Changes saved ✅" : "Assignment saved ✅");
-    } catch (e) {
-      console.error("assign error:", e);
+      setEditing((prev) => {
+        const next = new Set(prev);
+        next.delete(testId);
+        return next;
+      });
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(testId);
+        return next;
+      });
+      setNotice("Assignment saved ✅");
+    } catch {
       setError("Couldn’t save assignment.");
     } finally {
       setSubmitting((s) => ({ ...s, [testId]: false }));
     }
   }
 
-  // Bulk assign
-  async function handleBulkAssign() {
-    setError(null);
-    setNotice(null);
-
-    const ids = Array.from(selected);
-    if (ids.length === 0) { setError("Select at least one test."); return; }
-
-    const valid = [], invalid = [];
-    ids.forEach((id) => {
-      const d = drafts[id] || {};
-      if (!d?.testerId || (!d?.resultDueDate && !d?.reportDueDate)) invalid.push(id);
-      else valid.push({ id, d });
-    });
-
-    if (valid.length === 0) {
-      setError("Selected rows are missing required fields. Each needs a tester and at least one due date.");
-      return;
-    }
-
-    setBulkSubmitting(true);
-    try {
-      const results = await Promise.allSettled(
-        valid.map(({ id, d }) =>
-          fetch(`/api/assignments/${id}/assign`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              // Dev headers (optional):
-              // "x-user-id": "2",
-              // "x-user-name": "supervisor1",
-            },
-            body: JSON.stringify({
-              assignedTester: d.testerId,
-              resultDueDate: d.resultDueDate || null,
-              reportDueDate: d.reportDueDate || null,
-              notes: d.comments || null,
-            }),
-          }).then(async (r) => {
-            if (!r.ok) throw new Error(await r.text());
-            return r.json();
-          })
-        )
-      );
-
-      const succeeded = [], failed = [];
-      results.forEach((res, i) => (res.status === "fulfilled" ? succeeded : failed).push(valid[i].id));
-
-      if (succeeded.length > 0) {
-        setAssignedRows((prev) => new Set([...prev, ...succeeded]));
-        setEditing((prev) => {
-          const next = new Set(prev);
-          succeeded.forEach((id) => next.delete(id));
-          return next;
-        });
-        setSelected((prev) => {
-          const next = new Set(prev);
-          succeeded.forEach((id) => next.delete(id));
-          return next;
-        });
-      }
-
-      if (succeeded.length && (failed.length || invalid.length)) {
-        setNotice(`Assigned ${succeeded.length} test(s) ✅`);
-        setError(
-          [
-            failed.length ? `${failed.length} failed to save` : null,
-            invalid.length ? `${invalid.length} missing tester or due date` : null,
-          ].filter(Boolean).join(". ") + "."
-        );
-      } else if (succeeded.length) {
-        setNotice(`Assigned ${succeeded.length} test(s) ✅`);
-      } else {
-        setError(invalid.length ? "No assignments made. Selected rows are missing tester or due date." : "Bulk assignment failed.");
-      }
-    } catch (e) {
-      console.error("bulk assign error:", e);
-      setError("Bulk assignment failed.");
-    } finally {
-      setBulkSubmitting(false);
-    }
-  }
-
-  // Selectable ids
+  // Selectable ids (only unassigned or currently-editing assigned rows)
   const selectableIds = useMemo(() => {
-    return rows.map((r, i) => {
-      const id = getItemId(r, i);
-      const isAssigned = assignedRows.has(id);
-      const isEditing = editing.has(id);
-      return (!isAssigned || isEditing) ? id : null;
-    }).filter(Boolean);
+    return rows
+      .map((r, i) => {
+        const id = getItemId(r, i);
+        const isAssigned = assignedRows.has(id);
+        const isEditing = editing.has(id);
+        return !isAssigned || isEditing ? id : null;
+      })
+      .filter(Boolean);
   }, [rows, assignedRows, editing]);
 
   const allSelectableChecked =
@@ -341,11 +278,12 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
   function toggleOne(id) {
     const isAssigned = assignedRows.has(id);
     const isEditing = editing.has(id);
-    if (isAssigned && !isEditing) return;
+    if (isAssigned && !isEditing) return; // cannot select locked assigned rows
 
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
@@ -363,34 +301,185 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
   function toggleEdit(id) {
     setEditing((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
 
-  // Modal helpers (Assign)
+  // Assign Modal (single)
   function openAssignModal(testId) {
-    const d = drafts[testId] || { testerId: "", resultDueDate: "", reportDueDate: "", comments: "" };
+    const d = drafts[testId] || {
+      testerId: "",
+      resultDueDate: "",
+      reportDueDate: "",
+      comments: "",
+    };
     setAssignModal({ open: true, testId, form: { ...d } });
   }
   function closeAssignModal() {
-    setAssignModal({ open: false, testId: null, form: { testerId: "", resultDueDate: "", reportDueDate: "", comments: "" } });
+    setAssignModal({
+      open: false,
+      testId: null,
+      form: {
+        testerId: "",
+        resultDueDate: "",
+        reportDueDate: "",
+        comments: "",
+      },
+    });
   }
   function setAssignField(field, value) {
     setAssignModal((m) => ({ ...m, form: { ...m.form, [field]: value } }));
   }
   async function confirmAssignFromModal() {
     const { testId, form } = assignModal;
-    setDrafts((prev) => ({ ...prev, [testId]: { ...(prev[testId] || {}), ...form } }));
-    if (!form.testerId) { setError("Please select a tester."); return; }
-    if (!form.resultDueDate && !form.reportDueDate) { setError("Add a result or report due date."); return; }
+    setDrafts((prev) => ({
+      ...prev,
+      [testId]: { ...(prev[testId] || {}), ...form },
+    }));
+    if (!form.testerId) {
+      setError("Please select a tester.");
+      return;
+    }
+    if (!form.resultDueDate && !form.reportDueDate) {
+      setError("Add a result or report due date.");
+      return;
+    }
     await handleAssign(testId);
     closeAssignModal();
   }
 
-  // Modal helpers (History)
+  // NEW: Bulk assign modal control
+  function openBulkModal() {
+    if (selectableIds.length === 0 || selected.size === 0) {
+      setError("Select at least one test.");
+      return;
+    }
+    setBulkModal({
+      open: true,
+      busy: false,
+      form: {
+        testerId: "",
+        resultDueDate: "",
+        reportDueDate: "",
+        comments: "",
+      },
+    });
+  }
+  function closeBulkModal() {
+    setBulkModal({
+      open: false,
+      busy: false,
+      form: {
+        testerId: "",
+        resultDueDate: "",
+        reportDueDate: "",
+        comments: "",
+      },
+    });
+  }
+  function setBulkField(field, value) {
+    setBulkModal((m) => ({ ...m, form: { ...m.form, [field]: value } }));
+  }
+
+  // NEW: Bulk assign using ONE set of values for ALL selected rows
+  async function confirmBulkAssign() {
+    const ids = Array.from(selected);
+    const { testerId, resultDueDate, reportDueDate, comments } = bulkModal.form;
+
+    if (!testerId) {
+      setError("Bulk assign needs a tester.");
+      return;
+    }
+    if (!resultDueDate && !reportDueDate) {
+      setError("Bulk assign needs at least one due date.");
+      return;
+    }
+
+    // apply common values into drafts (so UI reflects immediately)
+    setDrafts((prev) => {
+      const next = { ...prev };
+      ids.forEach((id) => {
+        next[id] = {
+          ...(next[id] || {}),
+          testerId,
+          resultDueDate: resultDueDate || "",
+          reportDueDate: reportDueDate || "",
+          comments: comments || "",
+        };
+      });
+      return next;
+    });
+
+    setBulkModal((m) => ({ ...m, busy: true }));
+    setError(null);
+    setNotice(null);
+
+    try {
+      const results = await Promise.allSettled(
+        ids.map((id) =>
+          fetch(`/api/assignments/${id}/assign`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              assignedTester: testerId,
+              resultDueDate: resultDueDate || null,
+              reportDueDate: reportDueDate || null,
+              notes: comments || null,
+            }),
+          }).then(async (r) => {
+            if (!r.ok) throw new Error(await r.text());
+            return r.json();
+          })
+        )
+      );
+
+      const succeeded = [],
+        failed = [];
+      results.forEach((res, i) =>
+        (res.status === "fulfilled" ? succeeded : failed).push(ids[i])
+      );
+
+      if (succeeded.length > 0) {
+        setAssignedRows((prev) => new Set([...prev, ...succeeded]));
+        setEditing((prev) => {
+          const next = new Set(prev);
+          succeeded.forEach((id) => next.delete(id));
+          return next;
+        });
+        setSelected((prev) => {
+          const next = new Set(prev);
+          succeeded.forEach((id) => next.delete(id));
+          return next;
+        });
+      }
+
+      if (succeeded.length && failed.length) {
+        setNotice(`Assigned ${succeeded.length} test(s) ✅`);
+        setError(`${failed.length} failed to save.`);
+      } else if (succeeded.length) {
+        setNotice(`Assigned ${succeeded.length} test(s) ✅`);
+      } else {
+        setError("Bulk assignment failed.");
+      }
+    } catch {
+      setError("Bulk assignment failed.");
+    } finally {
+      setBulkModal((m) => ({ ...m, busy: false }));
+      closeBulkModal();
+    }
+  }
+
+  // History modal helpers
   function openHistoryModal(testId) {
-    setHistoryModal({ open: true, testId, loading: true, error: null, items: [] });
+    setHistoryModal({
+      open: true,
+      testId,
+      loading: true,
+      error: null,
+      items: [],
+    });
     fetch(`/api/assignments/${testId}/history`)
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -401,25 +490,47 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
       })
       .catch((e) => {
         console.error("history fetch error:", e);
-        setHistoryModal((m) => ({ ...m, loading: false, error: "Couldn’t load change history." }));
+        setHistoryModal((m) => ({
+          ...m,
+          loading: false,
+          error: "Couldn’t load change history.",
+        }));
       });
   }
   function closeHistoryModal() {
-    setHistoryModal({ open: false, testId: null, loading: false, error: null, items: [] });
+    setHistoryModal({
+      open: false,
+      testId: null,
+      loading: false,
+      error: null,
+      items: [],
+    });
   }
 
+  const assignedCount = useMemo(
+    () => rows.filter((r) => !!r.AssignedTester).length,
+    [rows]
+  );
+  const totalCount = useMemo(() => rows.length, [rows]);
+  const unassignedCount = totalCount - assignedCount;
   const selectedCount = selected.size;
-  const busy = loading || bulkSubmitting || Object.values(submitting).some(Boolean);
+  const busyAnyRow = Object.values(submitting).some(Boolean);
+  const busy = loading || busyAnyRow || bulkModal.busy;
 
-  if (!request) {
-    return <div className="text-muted">Select an assignment to view its details.</div>;
-  }
+  if (!request)
+    return (
+      <div className="text-muted">
+        Select an assignment to view its details.
+      </div>
+    );
 
   return (
     <div className="assignment-blue">
       <style>{`
         .assignment-blue .table tbody > tr > * { background-color: #EAF2FF !important; }
         .assignment-blue .table tbody > tr:hover > * { background-color: #D6E6FF !important; }
+        .btn-pill { border-radius: 999px; padding: .25rem .7rem; }
+        .btn-ghost { background: #fff; border: 1px solid rgba(0,0,0,.12); }
         /* Modal styles */
         .cmp-modal-backdrop {
           position: fixed; inset: 0; background: rgba(0,0,0,.45);
@@ -464,8 +575,12 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
           </div>
           <div className="col-md-3 col-sm-6 mb-2">
             <strong>Summary:</strong>{" "}
-            <span className="badge rounded-pill text-bg-primary me-2">Assigned: {assignedCount}</span>
-            <span className="badge rounded-pill text-bg-warning text-dark">Unassigned: {unassignedCount}</span>
+            <span className="badge rounded-pill text-bg-primary me-2">
+              Assigned: {assignedCount}
+            </span>
+            <span className="badge rounded-pill text-bg-secondary">
+              Unassigned Requests: {unassignedCount}
+            </span>
           </div>
         </div>
       </div>
@@ -491,14 +606,22 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
             <th>Report Due</th>
             <th>Comments</th>
             <th>Status</th>
-            <th style={{ width: "12rem" }}>Actions</th>
+            <th style={{ width: "10.5rem" }}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {loading ? (
-            <tr><td colSpan={11} className="text-center">Loading…</td></tr>
+            <tr>
+              <td colSpan={11} className="text-center">
+                Loading…
+              </td>
+            </tr>
           ) : rows.length === 0 ? (
-            <tr><td colSpan={11} className="text-center">No items.</td></tr>
+            <tr>
+              <td colSpan={11} className="text-center">
+                No items.
+              </td>
+            </tr>
           ) : (
             rows.map((r, i) => {
               const testId = getItemId(r, i);
@@ -514,7 +637,10 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
               const viewComments = d.comments || "—";
 
               return (
-                <tr key={testId} className={isEditing ? "table-active" : undefined}>
+                <tr
+                  key={testId}
+                  className={isEditing ? "table-active" : undefined}
+                >
                   <td className="text-center">
                     <input
                       type="checkbox"
@@ -527,7 +653,9 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
                   </td>
 
                   <td>{r.RequestedTest ?? "—"}</td>
-                  <td className="text-primary fw-semibold">{r.BoreholeDepth ?? "—"}</td>
+                  <td className="text-primary fw-semibold">
+                    {r.BoreholeDepth ?? "—"}
+                  </td>
                   <td>{formatDateOnly(r.RequestSubmissionDate)}</td>
                   <td>{formatDateOnly(r.RequestedDueDate)}</td>
 
@@ -537,11 +665,15 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
                         className="form-select"
                         style={{ fontSize: "1rem" }}
                         value={d.testerId || ""}
-                        onChange={(e) => updateDraft(testId, { testerId: e.target.value })}
+                        onChange={(e) =>
+                          updateDraft(testId, { testerId: e.target.value })
+                        }
                       >
                         <option value="">— Select tester —</option>
                         {testers.map((name) => (
-                          <option key={name} value={name}>{name}</option>
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
                         ))}
                       </select>
                     ) : (
@@ -556,7 +688,9 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
                         className="form-control"
                         style={{ fontSize: "1rem" }}
                         value={d.resultDueDate || ""}
-                        onChange={(e) => updateDraft(testId, { resultDueDate: e.target.value })}
+                        onChange={(e) =>
+                          updateDraft(testId, { resultDueDate: e.target.value })
+                        }
                       />
                     ) : (
                       <span>{viewResultDue}</span>
@@ -570,7 +704,9 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
                         className="form-control"
                         style={{ fontSize: "1rem" }}
                         value={d.reportDueDate || ""}
-                        onChange={(e) => updateDraft(testId, { reportDueDate: e.target.value })}
+                        onChange={(e) =>
+                          updateDraft(testId, { reportDueDate: e.target.value })
+                        }
                       />
                     ) : (
                       <span>{viewReportDue}</span>
@@ -585,7 +721,9 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
                         style={{ fontSize: "1rem" }}
                         placeholder="Comments"
                         value={d.comments || ""}
-                        onChange={(e) => updateDraft(testId, { comments: e.target.value })}
+                        onChange={(e) =>
+                          updateDraft(testId, { comments: e.target.value })
+                        }
                       />
                     ) : (
                       <span>{viewComments}</span>
@@ -594,66 +732,62 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
 
                   <td>
                     {isAssigned ? (
-                      <span className="badge rounded-pill text-bg-success">Assigned</span>
+                      <span className="badge rounded-pill text-bg-success">
+                        Assigned
+                      </span>
                     ) : (
-                      <span className="badge rounded-pill text-bg-secondary">Unassigned</span>
+                      <span className="badge rounded-pill text-bg-secondary">
+                        Unassigned
+                      </span>
                     )}
-                    {isSubmitting && <span className="ms-2 small text-muted">Saving…</span>}
+                    {isSubmitting && (
+                      <span className="ms-2 small text-muted">Saving…</span>
+                    )}
                   </td>
 
                   <td>
-                    <div style={{ display: "flex", gap: ".4rem", alignItems: "center", flexWrap: "wrap" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: ".4rem",
+                        alignItems: "center",
+                      }}
+                    >
+                      {/* Record */}
                       <button
                         type="button"
-                        className="btn btn-sm btn-outline-primary"
+                        className="btn btn-sm btn-ghost btn-pill"
                         onClick={() => openHistoryModal(testId)}
                         title="View change history"
                       >
                         Record
                       </button>
 
-                      {!isAssigned && (
+                      {/* Primary action: Assign… or Edit/Done */}
+                      {!isAssigned ? (
                         <button
                           type="button"
-                          className="btn btn-sm btn-primary"
+                          className="btn btn-sm btn-primary btn-pill"
                           onClick={() => openAssignModal(testId)}
-                          title="Assign this test"
+                          title="Assign tester and due dates"
                         >
                           Assign…
                         </button>
-                      )}
-
-                      {isAssigned && !isEditing && (
+                      ) : (
                         <button
                           type="button"
-                          className="btn btn-sm btn-outline-secondary"
+                          className={`btn btn-sm btn-${
+                            isEditing ? "secondary" : "primary"
+                          } btn-pill`}
                           onClick={() => toggleEdit(testId)}
-                          title="Edit this row"
+                          title={
+                            isEditing
+                              ? "Stop editing this row"
+                              : "Edit this row"
+                          }
                         >
-                          Edit
+                          {isEditing ? "Done" : "Edit"}
                         </button>
-                      )}
-
-                      {isEditing && (
-                        <>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-success"
-                            onClick={() => handleAssign(testId)}
-                            disabled={isSubmitting}
-                            title="Save changes"
-                          >
-                            {isSubmitting ? "Saving…" : "Save"}
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-light"
-                            onClick={() => toggleEdit(testId)}
-                            title="Stop editing"
-                          >
-                            Done
-                          </button>
-                        </>
                       )}
                     </div>
                   </td>
@@ -664,23 +798,23 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
         </tbody>
       </table>
 
-      {/* Bottom bar: Assign Selected */}
+      {/* Bottom bar: Assign Selected (opens bulk modal) */}
       <div className="d-flex justify-content-end mt-3">
         <button
           className="btn btn-primary px-4"
-          onClick={handleBulkAssign}
+          onClick={openBulkModal}
           title={
             selectedCount === 0
               ? "Select at least one test"
-              : "Assign using each selected row's inputs"
+              : "Bulk-assign same values to all selected rows"
           }
           disabled={busy || selectedCount === 0}
         >
-          {bulkSubmitting ? "Assigning…" : `Assign Selected (${selectedCount})`}
+          {bulkModal.busy ? "Assigning…" : `Assign Selected (${selectedCount})`}
         </button>
       </div>
 
-      {/* Assign Modal */}
+      {/* Assign Modal (single row) */}
       {assignModal.open && (
         <div
           className="cmp-modal-backdrop"
@@ -688,7 +822,8 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
           aria-modal="true"
           aria-labelledby="assignModalTitle"
           onMouseDown={(e) => {
-            if (e.target.classList.contains("cmp-modal-backdrop")) closeAssignModal();
+            if (e.target.classList.contains("cmp-modal-backdrop"))
+              closeAssignModal();
           }}
         >
           <div className="cmp-modal" onMouseDown={(e) => e.stopPropagation()}>
@@ -713,7 +848,9 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
                 >
                   <option value="">— Select tester —</option>
                   {testers.map((name) => (
-                    <option key={name} value={name}>{name}</option>
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -725,7 +862,9 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
                     type="date"
                     className="form-control"
                     value={assignModal.form.resultDueDate}
-                    onChange={(e) => setAssignField("resultDueDate", e.target.value)}
+                    onChange={(e) =>
+                      setAssignField("resultDueDate", e.target.value)
+                    }
                   />
                 </div>
                 <div className="col-sm-6 mb-3">
@@ -734,7 +873,9 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
                     type="date"
                     className="form-control"
                     value={assignModal.form.reportDueDate}
-                    onChange={(e) => setAssignField("reportDueDate", e.target.value)}
+                    onChange={(e) =>
+                      setAssignField("reportDueDate", e.target.value)
+                    }
                   />
                 </div>
               </div>
@@ -751,17 +892,123 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
               </div>
 
               <div className="form-text">
-                * A tester and at least one due date (Result or Report) are required.
+                * A tester and at least one due date (Result or Report) are
+                required.
               </div>
             </div>
             <div className="footer">
-              <button className="btn btn-light" onClick={closeAssignModal}>Cancel</button>
+              <button className="btn btn-light" onClick={closeAssignModal}>
+                Cancel
+              </button>
               <button
                 className="btn btn-primary"
                 onClick={confirmAssignFromModal}
                 disabled={!!submitting[assignModal.testId]}
               >
                 {submitting[assignModal.testId] ? "Saving…" : "Assign"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NEW: Bulk Assign Modal */}
+      {bulkModal.open && (
+        <div
+          className="cmp-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="bulkAssignTitle"
+          onMouseDown={(e) => {
+            if (e.target.classList.contains("cmp-modal-backdrop"))
+              closeBulkModal();
+          }}
+        >
+          <div className="cmp-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <header>
+              <h5 id="bulkAssignTitle">
+                Bulk Assign ({selectedCount} selected)
+              </h5>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary"
+                onClick={closeBulkModal}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </header>
+            <div className="body">
+              <div className="mb-3">
+                <label className="form-label">Tester</label>
+                <select
+                  className="form-select"
+                  value={bulkModal.form.testerId}
+                  onChange={(e) => setBulkField("testerId", e.target.value)}
+                >
+                  <option value="">— Select tester —</option>
+                  {testers.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="row">
+                <div className="col-sm-6 mb-3">
+                  <label className="form-label">Result Due</label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={bulkModal.form.resultDueDate}
+                    onChange={(e) =>
+                      setBulkField("resultDueDate", e.target.value)
+                    }
+                  />
+                </div>
+                <div className="col-sm-6 mb-3">
+                  <label className="form-label">Report Due</label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={bulkModal.form.reportDueDate}
+                    onChange={(e) =>
+                      setBulkField("reportDueDate", e.target.value)
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="mb-1">
+                <label className="form-label">Comments</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Optional"
+                  value={bulkModal.form.comments}
+                  onChange={(e) => setBulkField("comments", e.target.value)}
+                />
+              </div>
+
+              <div className="form-text">
+                * All selected rows will be assigned using these values.
+              </div>
+            </div>
+            <div className="footer">
+              <button
+                className="btn btn-light"
+                onClick={closeBulkModal}
+                disabled={bulkModal.busy}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={confirmBulkAssign}
+                disabled={bulkModal.busy}
+              >
+                {bulkModal.busy ? "Assigning…" : "Assign All"}
               </button>
             </div>
           </div>
@@ -776,7 +1023,8 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
           aria-modal="true"
           aria-labelledby="historyModalTitle"
           onMouseDown={(e) => {
-            if (e.target.classList.contains("cmp-modal-backdrop")) closeHistoryModal();
+            if (e.target.classList.contains("cmp-modal-backdrop"))
+              closeHistoryModal();
           }}
         >
           <div className="cmp-modal" onMouseDown={(e) => e.stopPropagation()}>
@@ -795,35 +1043,58 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
               {historyModal.loading ? (
                 <div className="text-muted">Loading history…</div>
               ) : historyModal.error ? (
-                <div className="alert alert-danger py-2">{historyModal.error}</div>
+                <div className="alert alert-danger py-2">
+                  {historyModal.error}
+                </div>
               ) : historyModal.items.length === 0 ? (
-                <div className="text-muted">No changes recorded for this test.</div>
+                <div className="text-muted">
+                  No changes recorded for this test.
+                </div>
               ) : (
                 historyModal.items.map((ev) => {
-                  const changes = ev.Changes && typeof ev.Changes === "object" ? ev.Changes : {};
+                  const changes =
+                    ev.Changes && typeof ev.Changes === "object"
+                      ? ev.Changes
+                      : {};
                   const fields = Object.keys(changes);
                   return (
-                    <div key={ev.HistoryID ?? ev.ChangedAt + ev.ChangedBy} className="history-event">
+                    <div
+                      key={ev.HistoryID ?? ev.ChangedAt + ev.ChangedBy}
+                      className="history-event"
+                    >
                       <div className="history-header">
-                        <span className="chip">{ev.ChangedBy || "Unknown user"}</span>
-                        <span className="text-muted small">{formatDateTimeLocal(ev.ChangedAt)}</span>
+                        <span className="chip">
+                          {ev.ChangedBy || "Unknown user"}
+                        </span>
+                        <span className="text-muted small">
+                          {formatDateTimeLocal(ev.ChangedAt)}
+                        </span>
                       </div>
                       {fields.length === 0 ? (
-                        <div className="text-muted">No detailed field changes provided.</div>
+                        <div className="text-muted">
+                          No detailed field changes provided.
+                        </div>
                       ) : (
                         <div className="history-grid">
                           {fields.map((k) => {
                             const label = FIELD_LABELS[k] || k;
                             const diff = changes[k] || {};
                             return (
-                              <div key={k} className="border rounded p-2 bg-white">
+                              <div
+                                key={k}
+                                className="border rounded p-2 bg-white"
+                              >
                                 <div className="small text-uppercase text-muted fw-semibold mb-1">
                                   {label}
                                 </div>
                                 <div className="diff">
-                                  <span className="text-muted">{renderValue(diff.from)}</span>
+                                  <span className="text-muted">
+                                    {renderValue(diff.from)}
+                                  </span>
                                   <span className="arrow">→</span>
-                                  <span className="fw-semibold">{renderValue(diff.to)}</span>
+                                  <span className="fw-semibold">
+                                    {renderValue(diff.to)}
+                                  </span>
                                 </div>
                               </div>
                             );
@@ -836,7 +1107,9 @@ function AssignmentDetails({ request, testers: testersProp, onRequestAttentionCh
               )}
             </div>
             <div className="footer">
-              <button className="btn btn-primary" onClick={closeHistoryModal}>Close</button>
+              <button className="btn btn-primary" onClick={closeHistoryModal}>
+                Close
+              </button>
             </div>
           </div>
         </div>

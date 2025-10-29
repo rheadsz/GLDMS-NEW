@@ -6,6 +6,7 @@ module.exports = (db) => {
   router.get("/", (req, res) => {
     const sql = `
       SELECT 
+        p.ProjectID as DBProjectID,
         p.EfisProjectId as ProjectID, 
         p.EfisProjectId,
         p.ProjectName,
@@ -40,6 +41,227 @@ module.exports = (db) => {
       }));
       
       res.json(projectsWithFlag);
+    });
+  });
+
+  // GET /api/projects/:id/details - Get complete project hierarchy
+  router.get("/:id/details", (req, res) => {
+    const projectId = req.params.id;
+    
+    console.log(`[PROJECT DETAILS] Fetching details for project ID: ${projectId}`);
+    
+    // First, let's check what projects exist
+    db.query('SELECT ProjectID, EfisProjectId FROM project LIMIT 5', (err, allProjects) => {
+      if (!err) {
+        console.log('[PROJECT DETAILS] Sample projects in DB:', allProjects);
+      }
+    });
+    
+    // Query to get project with all related data
+    // Try matching by ProjectID (numeric) or EfisProjectId (string)
+    const projectQuery = `
+      SELECT 
+        p.ProjectID,
+        p.EfisProjectId,
+        p.ProjectName,
+        p.EA,
+        p.District,
+        p.County,
+        p.Route,
+        p.PMFrom,
+        p.PMTo,
+        p.StructureNumber,
+        p.CreatedBy,
+        p.CreatedAt
+      FROM project p
+      WHERE p.ProjectID = ? OR p.EfisProjectId = ? OR CAST(p.ProjectID AS CHAR) = ?
+    `;
+    
+    db.query(projectQuery, [projectId, projectId, projectId], (err, projectResults) => {
+      if (err) {
+        console.error("Error fetching project:", err);
+        return res.status(500).json({ message: "Database error: " + err.message });
+      }
+      
+      console.log(`[PROJECT DETAILS] Query returned ${projectResults.length} results`);
+      console.log('[PROJECT DETAILS] Project result:', projectResults[0]);
+      
+      if (projectResults.length === 0) {
+        console.log(`[PROJECT DETAILS] Project not found with ID: ${projectId}`);
+        return res.status(404).json({ 
+          message: "Project not found", 
+          searchedId: projectId,
+          hint: "Make sure the project exists in the database"
+        });
+      }
+      
+      const project = projectResults[0];
+      const dbProjectId = project.ProjectID;
+      
+      console.log(`[PROJECT DETAILS] Using database ProjectID: ${dbProjectId}`);
+      
+      // Get structures for this project
+      const structuresQuery = `
+        SELECT 
+          s.StructureID,
+          s.StructureNumber,
+          s.ProjectComponent,
+          s.CreatedAt
+        FROM project_structures s
+        WHERE s.ProjectID = ?
+        ORDER BY s.StructureID
+      `;
+      
+      db.query(structuresQuery, [dbProjectId], (err, structures) => {
+        if (err) {
+          console.error("Error fetching structures:", err);
+          return res.status(500).json({ message: "Database error: " + err.message });
+        }
+        
+        console.log(`[PROJECT DETAILS] Found ${structures.length} structures`);
+        
+        if (structures.length === 0) {
+          console.log('[PROJECT DETAILS] No structures found, returning empty result');
+          return res.json({ project, structures: [] });
+        }
+        
+        // Get all boreholes for these structures
+        const structureIds = structures.map(s => s.StructureID);
+        const boreholesQuery = `
+          SELECT 
+            b.BoreholeID,
+            b.StructureID,
+            b.BoreholeNumber,
+            b.Latitude,
+            b.Longitude,
+            b.Northing,
+            b.Easting,
+            b.GroundSurfaceElevation,
+            b.CreatedAt
+          FROM project_boreholes b
+          WHERE b.StructureID IN (?)
+          ORDER BY b.BoreholeID
+        `;
+        
+        db.query(boreholesQuery, [structureIds], (err, boreholes) => {
+          if (err) {
+            console.error("Error fetching boreholes:", err);
+            return res.status(500).json({ message: "Database error: " + err.message });
+          }
+          
+          console.log(`[PROJECT DETAILS] Found ${boreholes.length} boreholes`);
+          
+          if (boreholes.length === 0) {
+            console.log('[PROJECT DETAILS] No boreholes found');
+            const structuresWithBoreholes = structures.map(s => ({ ...s, boreholes: [] }));
+            return res.json({ project, structures: structuresWithBoreholes });
+          }
+          
+          // Get all samples for these boreholes
+          const boreholeIds = boreholes.map(b => b.BoreholeID);
+          const samplesQuery = `
+            SELECT 
+              s.SampleID,
+              s.BoreholeID,
+              s.SampleNumber,
+              s.DepthFrom,
+              s.DepthTo,
+              s.TL101Number,
+              s.ContainerType,
+              s.Quantity,
+              s.FieldCollectionDate,
+              s.CreatedAt
+            FROM project_samples s
+            WHERE s.BoreholeID IN (?)
+            ORDER BY s.SampleID
+          `;
+          
+          db.query(samplesQuery, [boreholeIds], (err, samples) => {
+            if (err) {
+              console.error("Error fetching samples:", err);
+              return res.status(500).json({ message: "Database error: " + err.message });
+            }
+            
+            if (samples.length === 0) {
+              const boreholesWithSamples = boreholes.map(b => ({ ...b, samples: [] }));
+              const structuresWithBoreholes = structures.map(s => ({
+                ...s,
+                boreholes: boreholesWithSamples.filter(b => b.StructureID === s.StructureID)
+              }));
+              return res.json({ project, structures: structuresWithBoreholes });
+            }
+            
+            // Get all tests for these samples
+            const sampleIds = samples.map(s => s.SampleID);
+            console.log(`[PROJECT DETAILS] Found ${samples.length} samples, IDs:`, sampleIds);
+            
+            // Debug: Check if any tests exist at all
+            db.query('SELECT COUNT(*) as count FROM project_tests', (err, countResult) => {
+              if (!err) {
+                console.log(`[PROJECT DETAILS] Total tests in database: ${countResult[0].count}`);
+              }
+            });
+            
+            // Debug: Check if tests exist for these specific samples
+            db.query('SELECT SampleID, COUNT(*) as count FROM project_tests WHERE SampleID IN (?) GROUP BY SampleID', [sampleIds], (err, sampleTestCounts) => {
+              if (!err) {
+                console.log(`[PROJECT DETAILS] Tests per sample:`, sampleTestCounts);
+              }
+            });
+            
+            const testsQuery = `
+              SELECT 
+                t.TestID,
+                t.SampleID,
+                t.TestTypeID,
+                COALESCE(tt.TestName, CONCAT('Test Type ', t.TestTypeID)) as TestName,
+                t.Status,
+                t.RequestingUser,
+                t.RequestedDate,
+                t.CompletedDate,
+                t.CreatedAt,
+                t.RequestID
+              FROM project_tests t
+              LEFT JOIN test_type tt ON t.TestTypeID = tt.TestTypeID
+              WHERE t.SampleID IN (?)
+              ORDER BY t.TestID
+            `;
+            
+            db.query(testsQuery, [sampleIds], (err, tests) => {
+              if (err) {
+                console.error("Error fetching tests:", err);
+                return res.status(500).json({ message: "Database error: " + err.message });
+              }
+              
+              console.log(`[PROJECT DETAILS] Found ${tests.length} tests for samples`);
+              if (tests.length > 0) {
+                console.log('[PROJECT DETAILS] Sample test:', tests[0]);
+              }
+              
+              // Build the hierarchy
+              const samplesWithTests = samples.map(sample => ({
+                ...sample,
+                tests: tests.filter(t => t.SampleID === sample.SampleID)
+              }));
+              
+              const boreholesWithSamples = boreholes.map(borehole => ({
+                ...borehole,
+                samples: samplesWithTests.filter(s => s.BoreholeID === borehole.BoreholeID)
+              }));
+              
+              const structuresWithBoreholes = structures.map(structure => ({
+                ...structure,
+                boreholes: boreholesWithSamples.filter(b => b.StructureID === structure.StructureID)
+              }));
+              
+              res.json({
+                project,
+                structures: structuresWithBoreholes
+              });
+            });
+          });
+        });
+      });
     });
   });
 

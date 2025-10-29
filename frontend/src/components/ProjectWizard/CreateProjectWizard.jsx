@@ -126,7 +126,8 @@ function CreateProjectWizard({ userName, userEmail, userPhone, supervisors = [],
               testRows.push({
                 id: sampleId,
                 structure: structure?.id || '',
-                boreholeSample: `${sample.boreholeId} - ${sample.depthFrom}-${sample.depthTo}`,
+                // Use borehole NUMBER instead of ID for backend lookup
+                boreholeSample: `${borehole.boreholeNumber || borehole.boreholeId} - ${sample.depthFrom}-${sample.depthTo}`,
                 tests: tests
               });
             }

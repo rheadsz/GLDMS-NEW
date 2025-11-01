@@ -218,6 +218,9 @@ function AssignmentDetails({
     }
 
     const d = drafts[testId] || {};
+    // If this test was marked Rejected in Samples tab, require a comment
+    const rowObj = rows.find((r, i) => getItemId(r, i) === testId);
+    const isRejected = String(rowObj?.TestStatus || "").toLowerCase().includes("reject");
     if (!d.testerId) {
       setError("Please select a tester.");
       return;
@@ -226,12 +229,26 @@ function AssignmentDetails({
       setError("Add a result or report due date.");
       return;
     }
+    if (isRejected && !(d.comments && String(d.comments).trim().length)) {
+      setError("Comment is required for rejected tests.");
+      return;
+    }
 
     try {
       setSubmitting((s) => ({ ...s, [testId]: true }));
+      const devId = import.meta.env.VITE_DEV_USER_ID;
+      const devName = import.meta.env.VITE_DEV_USER_NAME;
+      const headers = {
+        "Content-Type": "application/json",
+        ...(import.meta.env.DEV
+          ? { "x-user-id": String(devId || 1), "x-user-name": String(devName || "Dev") }
+          : devId && devName
+          ? { "x-user-id": String(devId), "x-user-name": String(devName) }
+          : {}),
+      };
       const res = await fetch(`/api/assignments/${testId}/assign`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         credentials: "include",
         body: JSON.stringify({
           assignedTester: d.testerId,
@@ -242,7 +259,12 @@ function AssignmentDetails({
       });
       if (!res.ok) {
         let msg = "";
-        try { const data = await res.json(); msg = data?.error || ""; } catch { msg = await res.text(); }
+        try {
+          const data = await res.json();
+          msg = data?.error || "";
+        } catch {
+          msg = await res.text();
+        }
         throw new Error(msg || `HTTP ${res.status}`);
       }
       await res.json();
@@ -403,6 +425,15 @@ function AssignmentDetails({
       setError("Bulk assign needs at least one due date.");
       return;
     }
+    // If any selected test is Rejected, require a comment
+    const anyRejected = ids.some((id) => {
+      const r = rows.find((row, i) => getItemId(row, i) === id);
+      return String(r?.TestStatus || "").toLowerCase().includes("reject");
+    });
+    if (anyRejected && !(comments && String(comments).trim().length)) {
+      setError("Comment is required for rejected tests (one or more selected).");
+      return;
+    }
 
     // apply common values into drafts (so UI reflects immediately)
     setDrafts((prev) => {
@@ -425,10 +456,20 @@ function AssignmentDetails({
 
     try {
       const results = await Promise.allSettled(
-        ids.map((id) =>
-          fetch(`/api/assignments/${id}/assign`, {
+        ids.map((id) => {
+          const devId = import.meta.env.VITE_DEV_USER_ID;
+          const devName = import.meta.env.VITE_DEV_USER_NAME;
+          const headers = {
+            "Content-Type": "application/json",
+            ...(import.meta.env.DEV
+              ? { "x-user-id": String(devId || 1), "x-user-name": String(devName || "Dev") }
+              : devId && devName
+              ? { "x-user-id": String(devId), "x-user-name": String(devName) }
+              : {}),
+          };
+          return fetch(`/api/assignments/${id}/assign`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers,
             credentials: "include",
             body: JSON.stringify({
               assignedTester: testerId,
@@ -439,12 +480,17 @@ function AssignmentDetails({
           }).then(async (r) => {
             if (!r.ok) {
               let msg = "";
-              try { const d = await r.json(); msg = d?.error || ""; } catch { msg = await r.text(); }
+              try {
+                const d = await r.json();
+                msg = d?.error || "";
+              } catch {
+                msg = await r.text();
+              }
               throw new Error(msg || `HTTP ${r.status}`);
             }
             return r.json();
-          })
-        )
+          });
+        })
       );
 
       const succeeded = [],
@@ -648,6 +694,9 @@ function AssignmentDetails({
               const viewReportDue = d.reportDueDate || "—";
               const viewComments = d.comments || "—";
 
+              const isRejected = String(r.TestStatus || "")
+                .toLowerCase()
+                .includes("reject");
               return (
                 <tr
                   key={testId}
@@ -665,7 +714,26 @@ function AssignmentDetails({
                   </td>
 
                   <td>{r.RequestedTest ?? "—"}</td>
-                  <td className="text-primary fw-semibold">
+                  <td
+                    className={`${
+                      isRejected ? "text-danger" : "text-primary"
+                    } fw-semibold`}
+                    title={
+                      isRejected
+                        ? "The sample for this test is Rejected."
+                        : undefined
+                    }
+                  >
+                    {isRejected && (
+                      <span
+                        className="me-1"
+                        title="The sample for this test is Rejected."
+                        aria-label="Rejected sample"
+                        role="img"
+                      >
+                        !
+                      </span>
+                    )}
                     {r.BoreholeDepth ?? "—"}
                   </td>
                   <td>{formatDateOnly(r.RequestSubmissionDate)}</td>
@@ -791,9 +859,19 @@ function AssignmentDetails({
                           className={`btn btn-sm btn-${
                             isEditing ? "secondary" : "primary"
                           } btn-pill`}
-                          onClick={() => (isEditing ? handleAssign(testId) : toggleEdit(testId))}
+                          onClick={() =>
+                            isEditing
+                              ? handleAssign(testId)
+                              : toggleEdit(testId)
+                          }
                           disabled={isEditing && isSubmitting}
-                          title={isEditing ? (isSubmitting ? "Saving…" : "Save changes and stop editing") : "Edit this row"}
+                          title={
+                            isEditing
+                              ? isSubmitting
+                                ? "Saving…"
+                                : "Save changes and stop editing"
+                              : "Edit this row"
+                          }
                         >
                           {isEditing ? "Done" : "Edit"}
                         </button>

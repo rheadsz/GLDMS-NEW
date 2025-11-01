@@ -514,17 +514,15 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                   <thead className="table-light">
                     <tr>
                       <th>Requested Test</th>
-                      <th>Assigned Tester</th>
-                      <th>Due Date</th>
                       <th>Number of Specimen</th>
-                      <th>Action</th>
+                      <th>Action/Status</th>
                       <th>Date</th>
                     </tr>
                   </thead>
                   <tbody>
                     {activeTests.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="text-center text-muted">
+                        <td colSpan={4} className="text-center text-muted">
                           No tests for this sample.
                         </td>
                       </tr>
@@ -543,8 +541,6 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                         return (
                           <tr key={k}>
                             <td>{t.TestName ?? "—"}</td>
-                            <td>{t.AssignedTester ?? "—"}</td>
-                            <td>{fmtDate(t.ResultDueDate)}</td>
 
                             <td style={{ maxWidth: 160 }}>
                               {isEditing ? (

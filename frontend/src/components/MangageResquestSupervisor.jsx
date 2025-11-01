@@ -13,13 +13,13 @@ const ASSIGNMENTS_API_BASE = "http://localhost:3001/api/assignments"; // will ca
 function AppWithSidebar() {
   // Tabs
   const TAB_CONFIG = [
-    { key: "assignments", label: "Assignments" },
     { key: "samples", label: "Samples" },
+    { key: "assignments", label: "Assignments" },
     { key: "tests", label: "Test Management" },   // renamed
     { key: "staff", label: "Lab Management" },    // renamed
   ];
 
-  const [activeTab, setActiveTab] = useState("assignments");
+  const [activeTab, setActiveTab] = useState("samples");
 
   // GLOBAL hamburger for all tabs
   const [sidebarOpen, setSidebarOpen] = useState(true);

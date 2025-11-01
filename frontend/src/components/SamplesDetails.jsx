@@ -11,6 +11,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
   const [saveMsg, setSaveMsg] = useState("");
+  const [refreshTick, setRefreshTick] = useState(0);
 
   // uiByTest[k] = { specimenCount, action, actionDate }
   const [uiByTest, setUiByTest] = useState({});
@@ -28,6 +29,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
   const originalUiSnapshotRef = useRef({});
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setErr(null);
     setRows([]);
@@ -39,21 +41,28 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     focusCountRef.current = 0;
     setHasFocusedEditor(false);
 
-    fetch("/api/supervisor/request-samples")
-      .then((r) => {
+    async function load() {
+      try {
+        const r = await fetch("/api/supervisor/request-samples");
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((items) => {
+        const items = await r.json();
+        if (cancelled) return;
         const all = Array.isArray(items) ? items : [];
         const filtered = requestId
-          ? all.filter((r) => String(r.RequestID) === String(requestId))
+          ? all.filter((row) => String(row.RequestID) === String(requestId))
           : all;
         setRows(filtered);
-      })
-      .catch((e) => setErr(e.message || "Failed to load samples"))
-      .finally(() => setLoading(false));
-  }, [requestId]);
+      } catch (e) {
+        if (!cancelled) setErr(e.message || "Failed to load samples");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [requestId, refreshTick]);
 
   const groupedBySample = useMemo(() => {
     const map = new Map();
@@ -94,14 +103,12 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
       const next = {};
       activeTests.forEach((t, idx) => {
         const k = rowKey(t, idx);
-        next[k] =
-          prev[k] ??
-          {
-            specimenCount:
-              typeof t.NumberOfSpecimen === "number" ? t.NumberOfSpecimen : 1,
-            action: t.TestStatus ?? "Record Created",
-            actionDate: null, // set only when user changes action
-          };
+        next[k] = prev[k] ?? {
+          specimenCount:
+            typeof t.NumberOfSpecimen === "number" ? t.NumberOfSpecimen : 1,
+          action: t.TestStatus ?? "Record Created",
+          actionDate: null, // set only when user changes action
+        };
       });
       return next;
     });
@@ -178,7 +185,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
           NumberOfSpecimen:
             typeof u.specimenCount === "number" ? u.specimenCount : null,
           // If Action changed in this session, we have a local YYYY-MM-DD; else keep DB value
-          DateAssigned: u.actionDate ? u.actionDate : (t.DateAssigned ?? null),
+          DateAssigned: u.actionDate ? u.actionDate : t.DateAssigned ?? null,
         };
       })
       .filter((u) => typeof u.TestID !== "undefined" && u.TestID !== null);
@@ -251,7 +258,9 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     <div className="lm-main d-flex">
       <style>{`
         .lm-sidebar {
-          width: ${sidebarOpen ? `${SIDEBAR_OPEN_PX}px` : `${SIDEBAR_CLOSED_PX}px`};
+          width: ${
+            sidebarOpen ? `${SIDEBAR_OPEN_PX}px` : `${SIDEBAR_CLOSED_PX}px`
+          };
           transition: width 240ms ease;
           overflow: hidden;
           border-right: 1px solid var(--bs-border-color, #dee2e6);
@@ -313,14 +322,27 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={3} className="text-center py-4">Loading…</td></tr>
+                <tr>
+                  <td colSpan={3} className="text-center py-4">
+                    Loading…
+                  </td>
+                </tr>
               ) : err ? (
-                <tr><td colSpan={3} className="text-danger text-center py-4">{err}</td></tr>
+                <tr>
+                  <td colSpan={3} className="text-danger text-center py-4">
+                    {err}
+                  </td>
+                </tr>
               ) : sampleSummaries.length === 0 ? (
-                <tr><td colSpan={3} className="text-muted text-center py-4">No samples.</td></tr>
+                <tr>
+                  <td colSpan={3} className="text-muted text-center py-4">
+                    No samples.
+                  </td>
+                </tr>
               ) : (
                 sampleSummaries.map((s) => {
-                  const isActive = (active?.SampleID ?? active?.id) === (s.SampleID ?? s.id);
+                  const isActive =
+                    (active?.SampleID ?? active?.id) === (s.SampleID ?? s.id);
                   return (
                     <tr
                       key={s.SampleID ?? `${s.EfisProjectID}-${s.CreatedBy}`}
@@ -353,7 +375,9 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                       <td className="mono text-start">
                         <span className="linklike">{s.SampleID ?? "—"}</span>
                       </td>
-                      <td className="mono text-start">{s.EfisProjectID ?? "—"}</td>
+                      <td className="mono text-start">
+                        {s.EfisProjectID ?? "—"}
+                      </td>
                       <td className="text-start">{s.CreatedBy ?? "—"}</td>
                     </tr>
                   );
@@ -365,7 +389,12 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
 
         <div className="debug-bar">
           endpoint: <code>/api/supervisor/request-samples</code>
-          {requestId ? <> | filter: <code>RequestID={String(requestId)}</code></> : null}
+          {requestId ? (
+            <>
+              {" "}
+              | filter: <code>RequestID={String(requestId)}</code>
+            </>
+          ) : null}
         </div>
       </aside>
 
@@ -373,7 +402,9 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
       <section className="lm-content">
         <div className="p-3 h-100 overflow-auto">
           {!active ? (
-            <div className="text-muted">Select a sample to view its details.</div>
+            <div className="text-muted">
+              Select a sample to view its details.
+            </div>
           ) : (
             <>
               {/* Summary header */}
@@ -384,7 +415,9 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                 </div>
                 <div>
                   <span className="label">Project ID:</span>
-                  <span className="value mono">{active.EfisProjectID ?? "—"}</span>
+                  <span className="value mono">
+                    {active.EfisProjectID ?? "—"}
+                  </span>
                 </div>
                 <div>
                   <span className="label">Request No.:</span>
@@ -398,7 +431,9 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                 </div>
                 <div>
                   <span className="label">Status:</span>
-                  <span className={`value status ${statusTextClass(active.Status)}`}>
+                  <span
+                    className={`value status ${statusTextClass(active.Status)}`}
+                  >
                     {active.Status ?? "—"}
                   </span>
                 </div>
@@ -425,6 +460,14 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                     </button>
                   </>
                 )}
+                <button
+                  className="btn btn-sm btn-outline-primary"
+                  onClick={() => setRefreshTick((n) => n + 1)}
+                  disabled={loading || saving}
+                  title="Refetch latest tests for samples"
+                >
+                  Refresh
+                </button>
                 <span className="text-muted small">
                   {saving
                     ? "Saving…"
@@ -434,6 +477,8 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                     ? saveMsg
                     : isEditing
                     ? "Edit mode"
+                    : loading
+                    ? "Loading…"
                     : "View mode"}
                 </span>
                 {err && <span className="text-danger small">{err}</span>}
@@ -479,17 +524,18 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                   <tbody>
                     {activeTests.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="text-center text-muted">No tests for this sample.</td>
+                        <td colSpan={6} className="text-center text-muted">
+                          No tests for this sample.
+                        </td>
                       </tr>
                     ) : (
                       activeTests.map((t, idx) => {
                         const k = rowKey(t, idx);
-                        const rowUi =
-                          uiByTest[k] || {
-                            specimenCount: 1,
-                            action: "Record Created",
-                            actionDate: null,
-                          };
+                        const rowUi = uiByTest[k] || {
+                          specimenCount: 1,
+                          action: "Record Created",
+                          actionDate: null,
+                        };
 
                         // Prefer DB DateAssigned (YYYY-MM-DD), fallback to local actionDate (YYYY-MM-DD)
                         const displayDate = t.DateAssigned || rowUi.actionDate;
@@ -512,7 +558,8 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                                       ...prev,
                                       [k]: {
                                         ...prev[k],
-                                        specimenCount: Number(e.target.value) || 1,
+                                        specimenCount:
+                                          Number(e.target.value) || 1,
                                       },
                                     }));
                                     setUserEdited(true);
@@ -520,11 +567,15 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                                   }}
                                 >
                                   {[1, 2, 3, 4, 5].map((n) => (
-                                    <option key={n} value={n}>{n}</option>
+                                    <option key={n} value={n}>
+                                      {n}
+                                    </option>
                                   ))}
                                 </select>
                               ) : (
-                                <span className="mono">{rowUi.specimenCount}</span>
+                                <span className="mono">
+                                  {rowUi.specimenCount}
+                                </span>
                               )}
                             </td>
 
@@ -542,7 +593,10 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                                         ...prev[k],
                                         action: e.target.value || null,
                                         // record local date string to avoid timezone shift
-                                        actionDate: new Date().toLocaleDateString("en-CA"), // "YYYY-MM-DD"
+                                        actionDate:
+                                          new Date().toLocaleDateString(
+                                            "en-CA"
+                                          ), // "YYYY-MM-DD"
                                       },
                                     }));
                                     setUserEdited(true);

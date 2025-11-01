@@ -1336,7 +1336,7 @@ CREATE TABLE `project_samples` (
   `DepthFrom` decimal(8,2) DEFAULT NULL COMMENT 'Sample depth from',
   `DepthTo` decimal(8,2) DEFAULT NULL COMMENT 'Sample depth to',
   `TL101Number` varchar(50) DEFAULT NULL COMMENT 'TL-101 form number',
-  `ContainerType` enum('Tube','Jar') DEFAULT 'Tube' COMMENT 'Sample container type',
+  `ContainerType` enum('Tube','Jar') DEFAULnnjjjhT 'Tube' COMMENT 'Sample container type',
   `Quantity` int DEFAULT NULL COMMENT 'Sample quantity',
   `FieldCollectionDate` date DEFAULT NULL COMMENT 'Field collection date',
   `CreatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Record creation timestamp',

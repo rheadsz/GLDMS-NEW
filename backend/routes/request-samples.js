@@ -11,6 +11,7 @@ module.exports = function requestSamplesRouter(db) {
     const sql = `
       SELECT
         ps.SampleID,
+        ps.SampleNumber,
         ps.RequestID,
         ps.SampleStatus AS Status,
         ps.BoreholeID,

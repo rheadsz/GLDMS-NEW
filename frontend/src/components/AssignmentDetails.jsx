@@ -209,9 +209,10 @@ function AssignmentDetails({
     }));
   }
 
-  // Assign single row (initial assign)
+  // Assign single row or save edits for an assigned row
   async function handleAssign(testId) {
-    if (assignedRows.has(testId)) {
+    const isEditing = editing.has(testId);
+    if (assignedRows.has(testId) && !isEditing) {
       setError("This test is already assigned. Use Edit to make changes.");
       return;
     }
@@ -231,6 +232,7 @@ function AssignmentDetails({
       const res = await fetch(`/api/assignments/${testId}/assign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           assignedTester: d.testerId,
           resultDueDate: d.resultDueDate || null,
@@ -238,7 +240,11 @@ function AssignmentDetails({
           notes: d.comments || null,
         }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        let msg = "";
+        try { const data = await res.json(); msg = data?.error || ""; } catch { msg = await res.text(); }
+        throw new Error(msg || `HTTP ${res.status}`);
+      }
       await res.json();
 
       setAssignedRows((prev) => new Set([...prev, testId]));
@@ -252,9 +258,10 @@ function AssignmentDetails({
         next.delete(testId);
         return next;
       });
-      setNotice("Assignment saved ✅");
-    } catch {
-      setError("Couldn’t save assignment.");
+
+      setNotice(isEditing ? "Changes saved " : "Assignment saved ");
+    } catch (e) {
+      setError(e?.message || "Couldn’t save assignment.");
     } finally {
       setSubmitting((s) => ({ ...s, [testId]: false }));
     }
@@ -422,6 +429,7 @@ function AssignmentDetails({
           fetch(`/api/assignments/${id}/assign`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            credentials: "include",
             body: JSON.stringify({
               assignedTester: testerId,
               resultDueDate: resultDueDate || null,
@@ -429,7 +437,11 @@ function AssignmentDetails({
               notes: comments || null,
             }),
           }).then(async (r) => {
-            if (!r.ok) throw new Error(await r.text());
+            if (!r.ok) {
+              let msg = "";
+              try { const d = await r.json(); msg = d?.error || ""; } catch { msg = await r.text(); }
+              throw new Error(msg || `HTTP ${r.status}`);
+            }
             return r.json();
           })
         )
@@ -456,15 +468,15 @@ function AssignmentDetails({
       }
 
       if (succeeded.length && failed.length) {
-        setNotice(`Assigned ${succeeded.length} test(s) ✅`);
+        setNotice(`Assigned ${succeeded.length} test(s) `);
         setError(`${failed.length} failed to save.`);
       } else if (succeeded.length) {
-        setNotice(`Assigned ${succeeded.length} test(s) ✅`);
+        setNotice(`Assigned ${succeeded.length} test(s) `);
       } else {
         setError("Bulk assignment failed.");
       }
-    } catch {
-      setError("Bulk assignment failed.");
+    } catch (e) {
+      setError(e?.message || "Bulk assignment failed.");
     } finally {
       setBulkModal((m) => ({ ...m, busy: false }));
       closeBulkModal();
@@ -779,12 +791,9 @@ function AssignmentDetails({
                           className={`btn btn-sm btn-${
                             isEditing ? "secondary" : "primary"
                           } btn-pill`}
-                          onClick={() => toggleEdit(testId)}
-                          title={
-                            isEditing
-                              ? "Stop editing this row"
-                              : "Edit this row"
-                          }
+                          onClick={() => (isEditing ? handleAssign(testId) : toggleEdit(testId))}
+                          disabled={isEditing && isSubmitting}
+                          title={isEditing ? (isSubmitting ? "Saving…" : "Save changes and stop editing") : "Edit this row"}
                         >
                           {isEditing ? "Done" : "Edit"}
                         </button>

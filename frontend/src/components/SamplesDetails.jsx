@@ -15,6 +15,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
 
   // uiByTest[k] = { specimenCount, action, actionDate }
   const [uiByTest, setUiByTest] = useState({});
+  const [selectedKeys, setSelectedKeys] = useState(new Set());
 
   // Edit flow + autosave
   const [isEditing, setIsEditing] = useState(false);
@@ -122,6 +123,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     // reset focus tracking when sample/tests change
     focusCountRef.current = 0;
     setHasFocusedEditor(false);
+    setSelectedKeys(new Set());
   }, [activeTests]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const statusTextClass = (status) => {
@@ -252,6 +254,54 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     focusCountRef.current = Math.max(0, focusCountRef.current - 1);
     setHasFocusedEditor(focusCountRef.current > 0);
     // no immediate save here — effect will run and debounce after blur
+  };
+
+  // Selection helpers
+  const allRowKeys = useMemo(
+    () => activeTests.map((t, idx) => rowKey(t, idx)),
+    [activeTests]
+  );
+  const allSelected = useMemo(
+    () => allRowKeys.length > 0 && allRowKeys.every((k) => selectedKeys.has(k)),
+    [allRowKeys, selectedKeys]
+  );
+  const toggleAll = () => {
+    if (!isEditing) return;
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      const every = allRowKeys.every((k) => next.has(k));
+      if (every) allRowKeys.forEach((k) => next.delete(k));
+      else allRowKeys.forEach((k) => next.add(k));
+      return next;
+    });
+  };
+  const toggleOne = (k) => {
+    if (!isEditing) return;
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  };
+
+  // Bulk apply action to selected
+  const applyBulkAction = (label) => {
+    if (!isEditing || selectedKeys.size === 0) return;
+    const today = new Date().toLocaleDateString("en-CA");
+    setUiByTest((prev) => {
+      const next = { ...prev };
+      selectedKeys.forEach((k) => {
+        next[k] = {
+          ...(next[k] || {}),
+          action: label,
+          actionDate: today,
+        };
+      });
+      return next;
+    });
+    setUserEdited(true);
+    setSaveMsg("");
   };
 
   return (
@@ -458,6 +508,32 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                     >
                       Cancel
                     </button>
+                    <div className="ms-2 d-inline-flex gap-2">
+                      <button
+                        className="btn btn-sm btn-success"
+                        onClick={() => applyBulkAction("Accepted")}
+                        disabled={saving || selectedKeys.size === 0}
+                        title={
+                          selectedKeys.size === 0
+                            ? "Select tests to accept"
+                            : "Mark selected tests as Accepted"
+                        }
+                      >
+                        Accept
+                      </button>
+                      <button
+                        className="btn btn-sm btn-danger"
+                        onClick={() => applyBulkAction("Rejected")}
+                        disabled={saving || selectedKeys.size === 0}
+                        title={
+                          selectedKeys.size === 0
+                            ? "Select tests to reject"
+                            : "Mark selected tests as Rejected"
+                        }
+                      >
+                        Reject
+                      </button>
+                    </div>
                   </>
                 )}
                 <button
@@ -513,16 +589,27 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                 <table className="table table-bordered table-sm mb-0">
                   <thead className="table-light">
                     <tr>
+                      <th style={{ width: "2.25rem", textAlign: "center" }}>
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          checked={allSelected}
+                          onChange={toggleAll}
+                          aria-label="Select all tests"
+                          disabled={!isEditing}
+                        />
+                      </th>
                       <th>Requested Test</th>
                       <th>Number of Specimen</th>
-                      <th>Action/Status</th>
+                      <th>Status</th>
+                      <th>Action</th>
                       <th>Date</th>
                     </tr>
                   </thead>
                   <tbody>
                     {activeTests.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="text-center text-muted">
+                        <td colSpan={6} className="text-center text-muted">
                           No tests for this sample.
                         </td>
                       </tr>
@@ -540,6 +627,16 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
 
                         return (
                           <tr key={k}>
+                            <td className="text-center">
+                              <input
+                                type="checkbox"
+                                className="form-check-input"
+                                checked={selectedKeys.has(k)}
+                                onChange={() => toggleOne(k)}
+                                disabled={!isEditing}
+                                aria-label={`Select test ${t.TestName ?? ""}`}
+                              />
+                            </td>
                             <td>{t.TestName ?? "—"}</td>
 
                             <td style={{ maxWidth: 160 }}>
@@ -575,11 +672,29 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                               )}
                             </td>
 
+                            {/* Status (from DB) */}
+                            <td>
+                              <span className={statusTextClass(t.TestStatus)}>
+                                {t.TestStatus ?? "—"}
+                              </span>
+                            </td>
+
+                            {/* Action (edit control) */}
                             <td style={{ maxWidth: 200 }}>
                               {isEditing ? (
                                 <select
                                   className="form-select form-select-sm"
-                                  value={rowUi.action}
+                                  value={
+                                    [
+                                      "Accepted",
+                                      "Rejected",
+                                      "Not Received",
+                                    ].includes(
+                                      String(rowUi.action || t.TestStatus || "")
+                                    )
+                                      ? String(rowUi.action || t.TestStatus)
+                                      : ""
+                                  }
                                   onFocus={handleFocus}
                                   onBlur={handleBlur}
                                   onChange={(e) => {
@@ -599,15 +714,13 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                                     setSaveMsg("");
                                   }}
                                 >
-                                  <option>Record Created</option>
-                                  <option>Not Received</option>
+                                  <option value="">— Select —</option>
                                   <option>Accepted</option>
                                   <option>Rejected</option>
+                                  <option>Not Received</option>
                                 </select>
                               ) : (
-                                <span className={statusTextClass(rowUi.action)}>
-                                  {rowUi.action ?? "—"}
-                                </span>
+                                <span>—</span>
                               )}
                             </td>
 

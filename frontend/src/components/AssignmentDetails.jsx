@@ -12,6 +12,7 @@ function AssignmentDetails({
   const [submitting, setSubmitting] = useState({});
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [deliveryDueDate, setDeliveryDueDate] = useState("");
 
   // Track assigned rows + selection + bulk state
   const [assignedRows, setAssignedRows] = useState(() => new Set());
@@ -225,8 +226,8 @@ function AssignmentDetails({
       setError("Please select a tester.");
       return;
     }
-    if (!d.resultDueDate && !d.reportDueDate) {
-      setError("Add a result or report due date.");
+    if (!deliveryDueDate && !d.resultDueDate) {
+      setError("Delivery due date is required (or provide a result due date).");
       return;
     }
     if (isRejected && !(d.comments && String(d.comments).trim().length)) {
@@ -253,7 +254,7 @@ function AssignmentDetails({
         body: JSON.stringify({
           assignedTester: d.testerId,
           resultDueDate: d.resultDueDate || null,
-          reportDueDate: d.reportDueDate || null,
+          reportDueDate: deliveryDueDate || null,
           notes: d.comments || null,
         }),
       });
@@ -415,14 +416,14 @@ function AssignmentDetails({
   // NEW: Bulk assign using ONE set of values for ALL selected rows
   async function confirmBulkAssign() {
     const ids = Array.from(selected);
-    const { testerId, resultDueDate, reportDueDate, comments } = bulkModal.form;
+    const { testerId, resultDueDate, comments } = bulkModal.form;
 
     if (!testerId) {
       setError("Bulk assign needs a tester.");
       return;
     }
-    if (!resultDueDate && !reportDueDate) {
-      setError("Bulk assign needs at least one due date.");
+    if (!deliveryDueDate && !resultDueDate) {
+      setError("Delivery due date is required (or provide a result due date).");
       return;
     }
     // If any selected test is Rejected, require a comment
@@ -443,7 +444,7 @@ function AssignmentDetails({
           ...(next[id] || {}),
           testerId,
           resultDueDate: resultDueDate || "",
-          reportDueDate: reportDueDate || "",
+          reportDueDate: deliveryDueDate || "",
           comments: comments || "",
         };
       });
@@ -474,7 +475,7 @@ function AssignmentDetails({
             body: JSON.stringify({
               assignedTester: testerId,
               resultDueDate: resultDueDate || null,
-              reportDueDate: reportDueDate || null,
+              reportDueDate: deliveryDueDate || null,
               notes: comments || null,
             }),
           }).then(async (r) => {
@@ -574,6 +575,10 @@ function AssignmentDetails({
   const selectedCount = selected.size;
   const busyAnyRow = Object.values(submitting).some(Boolean);
   const busy = loading || busyAnyRow || bulkModal.busy;
+  const requestedDueTop = useMemo(() => {
+    if (!rows || rows.length === 0) return "—";
+    return formatDateOnly(rows[0]?.RequestedDueDate) || "—";
+  }, [rows]);
 
   if (!request)
     return (
@@ -643,6 +648,23 @@ function AssignmentDetails({
         </div>
       </div>
 
+      {/* Delivery Due (global) */}
+      <div className="mb-3">
+        <label className="form-label fw-semibold">Delivery Due</label>
+        <input
+          type="date"
+          className="form-control"
+          value={deliveryDueDate}
+          onChange={(e) => setDeliveryDueDate(e.target.value)}
+        />
+        <div className="form-text">This date will be used as the Delivery Due for all saves.</div>
+      </div>
+
+      {/* Requested Due Date (constant) */}
+      <div className="mb-3">
+        <strong>Requested Due Date:</strong> <span className="mono">{requestedDueTop}</span>
+      </div>
+
       <table className="table table-bordered table-hover align-middle fs-6">
         <thead className="table-light">
           <tr>
@@ -658,25 +680,23 @@ function AssignmentDetails({
             <th>Requested Test</th>
             <th>Sample (Borehole ID-Depth)</th>
             <th>Request Submission Date</th>
-            <th>Requested Due Date</th>
             <th>Assigned Tester</th>
             <th>Result Due</th>
-            <th>Report Due</th>
-            <th>Comments</th>
             <th>Status</th>
+            <th>Comments</th>
             <th style={{ width: "10.5rem" }}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={11} className="text-center">
+              <td colSpan={9} className="text-center">
                 Loading…
               </td>
             </tr>
           ) : rows.length === 0 ? (
             <tr>
-              <td colSpan={11} className="text-center">
+              <td colSpan={9} className="text-center">
                 No items.
               </td>
             </tr>
@@ -737,8 +757,6 @@ function AssignmentDetails({
                     {r.BoreholeDepth ?? "—"}
                   </td>
                   <td>{formatDateOnly(r.RequestSubmissionDate)}</td>
-                  <td>{formatDateOnly(r.RequestedDueDate)}</td>
-
                   <td>
                     {isEditing ? (
                       <select
@@ -777,22 +795,25 @@ function AssignmentDetails({
                     )}
                   </td>
 
+                  {/* Report Due column removed; replaced by global Delivery Due */}
+
+                  {/* Status */}
                   <td>
-                    {isEditing ? (
-                      <input
-                        type="date"
-                        className="form-control"
-                        style={{ fontSize: "1rem" }}
-                        value={d.reportDueDate || ""}
-                        onChange={(e) =>
-                          updateDraft(testId, { reportDueDate: e.target.value })
-                        }
-                      />
+                    {isAssigned ? (
+                      <span className="badge rounded-pill text-bg-success">
+                        Assigned
+                      </span>
                     ) : (
-                      <span>{viewReportDue}</span>
+                      <span className="badge rounded-pill text-bg-secondary">
+                        Unassigned
+                      </span>
+                    )}
+                    {isSubmitting && (
+                      <span className="ms-2 small text-muted">Saving…</span>
                     )}
                   </td>
 
+                  {/* Comments (moved closer to end) */}
                   <td>
                     {isEditing ? (
                       <input
@@ -811,21 +832,6 @@ function AssignmentDetails({
                   </td>
 
                   <td>
-                    {isAssigned ? (
-                      <span className="badge rounded-pill text-bg-success">
-                        Assigned
-                      </span>
-                    ) : (
-                      <span className="badge rounded-pill text-bg-secondary">
-                        Unassigned
-                      </span>
-                    )}
-                    {isSubmitting && (
-                      <span className="ms-2 small text-muted">Saving…</span>
-                    )}
-                  </td>
-
-                  <td>
                     <div
                       style={{
                         display: "flex",
@@ -833,16 +839,6 @@ function AssignmentDetails({
                         alignItems: "center",
                       }}
                     >
-                      {/* Record */}
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-ghost btn-pill"
-                        onClick={() => openHistoryModal(testId)}
-                        title="View change history"
-                      >
-                        Record
-                      </button>
-
                       {/* Primary action: Assign… or Edit/Done */}
                       {!isAssigned ? (
                         <button
@@ -885,21 +881,19 @@ function AssignmentDetails({
         </tbody>
       </table>
 
-      {/* Bottom bar: Assign Selected (opens bulk modal) */}
-      <div className="d-flex justify-content-end mt-3">
-        <button
-          className="btn btn-primary px-4"
-          onClick={openBulkModal}
-          title={
-            selectedCount === 0
-              ? "Select at least one test"
-              : "Bulk-assign same values to all selected rows"
-          }
-          disabled={busy || selectedCount === 0}
-        >
-          {bulkModal.busy ? "Assigning…" : `Assign Selected (${selectedCount})`}
-        </button>
-      </div>
+      {/* Bottom bar: Assign Selected (only when more than one selected) */}
+      {selectedCount > 1 && (
+        <div className="d-flex justify-content-end mt-3">
+          <button
+            className="btn btn-primary px-4"
+            onClick={openBulkModal}
+            title={"Bulk-assign same values to all selected rows"}
+            disabled={busy}
+          >
+            {bulkModal.busy ? "Assigning…" : `Assign Selected (${selectedCount})`}
+          </button>
+        </div>
+      )}
 
       {/* Assign Modal (single row) */}
       {assignModal.open && (
@@ -955,14 +949,12 @@ function AssignmentDetails({
                   />
                 </div>
                 <div className="col-sm-6 mb-3">
-                  <label className="form-label">Report Due</label>
+                  <label className="form-label">Delivery Due</label>
                   <input
                     type="date"
                     className="form-control"
-                    value={assignModal.form.reportDueDate}
-                    onChange={(e) =>
-                      setAssignField("reportDueDate", e.target.value)
-                    }
+                    value={deliveryDueDate}
+                    onChange={(e) => setDeliveryDueDate(e.target.value)}
                   />
                 </div>
               </div>
@@ -979,8 +971,7 @@ function AssignmentDetails({
               </div>
 
               <div className="form-text">
-                * A tester and at least one due date (Result or Report) are
-                required.
+                * A tester and Delivery Due (or Result Due) are required.
               </div>
             </div>
             <div className="footer">
@@ -1055,14 +1046,12 @@ function AssignmentDetails({
                   />
                 </div>
                 <div className="col-sm-6 mb-3">
-                  <label className="form-label">Report Due</label>
+                  <label className="form-label">Delivery Due</label>
                   <input
                     type="date"
                     className="form-control"
-                    value={bulkModal.form.reportDueDate}
-                    onChange={(e) =>
-                      setBulkField("reportDueDate", e.target.value)
-                    }
+                    value={deliveryDueDate}
+                    onChange={(e) => setDeliveryDueDate(e.target.value)}
                   />
                 </div>
               </div>

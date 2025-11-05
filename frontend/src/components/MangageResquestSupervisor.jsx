@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import AssignmentDetails from "./AssignmentDetails";
 import SamplesDetails from "./SamplesDetails";
+import TestManagement from "./TestManagement";
 
 // API endpoints
 const REQUESTS_API = "http://localhost:3001/api/supervisor/requests";
@@ -397,6 +398,18 @@ function AppWithSidebar() {
           onSelectSample={setSelectedSample}
           sidebarOpen={sidebarOpen}
         />
+      ) : activeTab === "tests" ? (
+        <section className="lm-content">
+          <div className="p-4 h-100 overflow-auto">
+            <TestManagement
+              onJumpToSample={(sampleId) => {
+                const s = (samples || []).find((x) => x.SampleID === sampleId);
+                if (s) setSelectedSample(s);
+                setActiveTab("samples");
+              }}
+            />
+          </div>
+        </section>
       ) : (
         <div className="p-4">
           <h4>{activeLabel} Panel</h4>

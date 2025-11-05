@@ -100,6 +100,10 @@ app.use("/api", assignmentsRouter);
 const requestSamplesRoutes = require("./routes/request-samples")(db);
 app.use("/api/supervisor", requestSamplesRoutes);
 
+// Test management router
+const testManagementRoutes = require("./routes/test-management")(db);
+app.use("/api/test-management", testManagementRoutes);
+
 // ---------------- Ad-hoc endpoints ----------------
 app.get("/api/test-types", (req, res) => {
   const query = "SELECT * FROM test_type";

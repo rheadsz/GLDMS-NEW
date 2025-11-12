@@ -104,6 +104,17 @@ function AssignmentDetails({
       .then((data) => {
         if (!mounted) return;
         const items = Array.isArray(data.items) ? data.items : [];
+        // Default sort: push rejected rows to the bottom
+        items.sort((a, b) => {
+          const ra = String(a.TestStatus || "")
+            .toLowerCase()
+            .includes("reject");
+          const rb = String(b.TestStatus || "")
+            .toLowerCase()
+            .includes("reject");
+          if (ra === rb) return 0;
+          return ra ? 1 : -1;
+        });
         setRows(items);
 
         const nextDrafts = {};
@@ -113,8 +124,11 @@ function AssignmentDetails({
         items.forEach((row, i) => {
           const id = getItemId(row, i);
           const isAssigned = !!row.AssignedTester;
+          const isRejected = String(row.TestStatus || "")
+            .toLowerCase()
+            .includes("reject");
           if (isAssigned) nextAssigned.add(id);
-          else unassignedIds.push(id);
+          else if (!isRejected) unassignedIds.push(id);
 
           nextDrafts[id] = {
             testerId: row.AssignedTester ?? "",
@@ -221,7 +235,9 @@ function AssignmentDetails({
     const d = drafts[testId] || {};
     // If this test was marked Rejected in Samples tab, require a comment
     const rowObj = rows.find((r, i) => getItemId(r, i) === testId);
-    const isRejected = String(rowObj?.TestStatus || "").toLowerCase().includes("reject");
+    const isRejected = String(rowObj?.TestStatus || "")
+      .toLowerCase()
+      .includes("reject");
     if (!d.testerId) {
       setError("Please select a tester.");
       return;
@@ -242,7 +258,10 @@ function AssignmentDetails({
       const headers = {
         "Content-Type": "application/json",
         ...(import.meta.env.DEV
-          ? { "x-user-id": String(devId || 1), "x-user-name": String(devName || "Dev") }
+          ? {
+              "x-user-id": String(devId || 1),
+              "x-user-name": String(devName || "Dev"),
+            }
           : devId && devName
           ? { "x-user-id": String(devId), "x-user-name": String(devName) }
           : {}),
@@ -295,20 +314,24 @@ function AssignmentDetails({
     return rows
       .map((r, i) => {
         const id = getItemId(r, i);
-        const isAssigned = assignedRows.has(id);
-        const isEditing = editing.has(id);
-        return !isAssigned || isEditing ? id : null;
+        const isRejected = String(r?.TestStatus || "")
+          .toLowerCase()
+          .includes("reject");
+        if (isRejected) return null; // cannot select rejected rows
+        return id; // allow selecting regardless of assigned/editing status
       })
       .filter(Boolean);
-  }, [rows, assignedRows, editing]);
+  }, [rows]);
 
   const allSelectableChecked =
     selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
 
   function toggleOne(id) {
-    const isAssigned = assignedRows.has(id);
-    const isEditing = editing.has(id);
-    if (isAssigned && !isEditing) return; // cannot select locked assigned rows
+    const rowObj = rows.find((r, i) => getItemId(r, i) === id);
+    const isRejected = String(rowObj?.TestStatus || "")
+      .toLowerCase()
+      .includes("reject");
+    if (isRejected) return; // cannot select rejected rows
 
     setSelected((prev) => {
       const next = new Set(prev);
@@ -329,6 +352,11 @@ function AssignmentDetails({
   }
 
   function toggleEdit(id) {
+    const rowObj = rows.find((r, i) => getItemId(r, i) === id);
+    const isRejected = String(rowObj?.TestStatus || "")
+      .toLowerCase()
+      .includes("reject");
+    if (isRejected) return; // cannot enter edit for rejected rows
     setEditing((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -372,8 +400,8 @@ function AssignmentDetails({
       setError("Please select a tester.");
       return;
     }
-    if (!form.resultDueDate && !form.reportDueDate) {
-      setError("Add a result or report due date.");
+    if (!form.resultDueDate && !deliveryDueDate) {
+      setError("Delivery due date is required (or provide a result due date).");
       return;
     }
     await handleAssign(testId);
@@ -429,10 +457,14 @@ function AssignmentDetails({
     // If any selected test is Rejected, require a comment
     const anyRejected = ids.some((id) => {
       const r = rows.find((row, i) => getItemId(row, i) === id);
-      return String(r?.TestStatus || "").toLowerCase().includes("reject");
+      return String(r?.TestStatus || "")
+        .toLowerCase()
+        .includes("reject");
     });
     if (anyRejected && !(comments && String(comments).trim().length)) {
-      setError("Comment is required for rejected tests (one or more selected).");
+      setError(
+        "Comment is required for rejected tests (one or more selected)."
+      );
       return;
     }
 
@@ -463,7 +495,10 @@ function AssignmentDetails({
           const headers = {
             "Content-Type": "application/json",
             ...(import.meta.env.DEV
-              ? { "x-user-id": String(devId || 1), "x-user-name": String(devName || "Dev") }
+              ? {
+                  "x-user-id": String(devId || 1),
+                  "x-user-name": String(devName || "Dev"),
+                }
               : devId && devName
               ? { "x-user-id": String(devId), "x-user-name": String(devName) }
               : {}),
@@ -653,16 +688,20 @@ function AssignmentDetails({
         <label className="form-label fw-semibold">Delivery Due</label>
         <input
           type="date"
-          className="form-control"
+          className="form-control form-control-sm"
+          style={{ maxWidth: "14rem" }}
           value={deliveryDueDate}
           onChange={(e) => setDeliveryDueDate(e.target.value)}
         />
-        <div className="form-text">This date will be used as the Delivery Due for all saves.</div>
+        <div className="form-text">
+          This date will be used as the Delivery Due for all saves.
+        </div>
       </div>
 
-      {/* Requested Due Date (constant) */}
+      {/* Requested Result Due (constant) */}
       <div className="mb-3">
-        <strong>Requested Due Date:</strong> <span className="mono">{requestedDueTop}</span>
+        <strong>Requested Result Due:</strong>{" "}
+        <span className="mono">{requestedDueTop}</span>
       </div>
 
       <table className="table table-bordered table-hover align-middle fs-6">
@@ -683,20 +722,19 @@ function AssignmentDetails({
             <th>Assigned Tester</th>
             <th>Result Due</th>
             <th>Status</th>
-            <th>Comments</th>
             <th style={{ width: "10.5rem" }}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={9} className="text-center">
+              <td colSpan={8} className="text-center">
                 Loading…
               </td>
             </tr>
           ) : rows.length === 0 ? (
             <tr>
-              <td colSpan={9} className="text-center">
+              <td colSpan={8} className="text-center">
                 No items.
               </td>
             </tr>
@@ -720,7 +758,12 @@ function AssignmentDetails({
               return (
                 <tr
                   key={testId}
-                  className={isEditing ? "table-active" : undefined}
+                  className={`${isEditing ? "table-active" : ""} ${
+                    isRejected ? "opacity-75" : ""
+                  }`}
+                  style={
+                    isRejected ? { backgroundColor: "#f2f2f2" } : undefined
+                  }
                 >
                   <td className="text-center">
                     <input
@@ -728,7 +771,7 @@ function AssignmentDetails({
                       className="form-check-input"
                       checked={checked}
                       onChange={() => toggleOne(testId)}
-                      disabled={isAssigned && !isEditing}
+                      disabled={isRejected}
                       aria-label={`Select test ${testId}`}
                     />
                   </td>
@@ -758,7 +801,7 @@ function AssignmentDetails({
                   </td>
                   <td>{formatDateOnly(r.RequestSubmissionDate)}</td>
                   <td>
-                    {isEditing ? (
+                    {isEditing && !isRejected ? (
                       <select
                         className="form-select"
                         style={{ fontSize: "1rem" }}
@@ -780,7 +823,7 @@ function AssignmentDetails({
                   </td>
 
                   <td>
-                    {isEditing ? (
+                    {isEditing && !isRejected ? (
                       <input
                         type="date"
                         className="form-control"
@@ -813,23 +856,7 @@ function AssignmentDetails({
                     )}
                   </td>
 
-                  {/* Comments (moved closer to end) */}
-                  <td>
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        className="form-control"
-                        style={{ fontSize: "1rem" }}
-                        placeholder="Comments"
-                        value={d.comments || ""}
-                        onChange={(e) =>
-                          updateDraft(testId, { comments: e.target.value })
-                        }
-                      />
-                    ) : (
-                      <span>{viewComments}</span>
-                    )}
-                  </td>
+                  {/* Comments column removed */}
 
                   <td>
                     <div
@@ -845,6 +872,7 @@ function AssignmentDetails({
                           type="button"
                           className="btn btn-sm btn-primary btn-pill"
                           onClick={() => openAssignModal(testId)}
+                          disabled={isRejected || !checked}
                           title="Assign tester and due dates"
                         >
                           Assign…
@@ -860,7 +888,11 @@ function AssignmentDetails({
                               ? handleAssign(testId)
                               : toggleEdit(testId)
                           }
-                          disabled={isEditing && isSubmitting}
+                          disabled={
+                            isRejected ||
+                            (!isEditing && !checked) ||
+                            (isEditing && isSubmitting)
+                          }
                           title={
                             isEditing
                               ? isSubmitting
@@ -890,7 +922,9 @@ function AssignmentDetails({
             title={"Bulk-assign same values to all selected rows"}
             disabled={busy}
           >
-            {bulkModal.busy ? "Assigning…" : `Assign Selected (${selectedCount})`}
+            {bulkModal.busy
+              ? "Assigning…"
+              : `Assign Selected (${selectedCount})`}
           </button>
         </div>
       )}
@@ -946,15 +980,6 @@ function AssignmentDetails({
                     onChange={(e) =>
                       setAssignField("resultDueDate", e.target.value)
                     }
-                  />
-                </div>
-                <div className="col-sm-6 mb-3">
-                  <label className="form-label">Delivery Due</label>
-                  <input
-                    type="date"
-                    className="form-control"
-                    value={deliveryDueDate}
-                    onChange={(e) => setDeliveryDueDate(e.target.value)}
                   />
                 </div>
               </div>
@@ -1043,15 +1068,6 @@ function AssignmentDetails({
                     onChange={(e) =>
                       setBulkField("resultDueDate", e.target.value)
                     }
-                  />
-                </div>
-                <div className="col-sm-6 mb-3">
-                  <label className="form-label">Delivery Due</label>
-                  <input
-                    type="date"
-                    className="form-control"
-                    value={deliveryDueDate}
-                    onChange={(e) => setDeliveryDueDate(e.target.value)}
                   />
                 </div>
               </div>

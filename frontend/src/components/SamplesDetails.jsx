@@ -16,6 +16,13 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
   // uiByTest[k] = { specimenCount, action, actionDate }
   const [uiByTest, setUiByTest] = useState({});
   const [selectedKeys, setSelectedKeys] = useState(new Set());
+  const [rejectModal, setRejectModal] = useState({
+    open: false,
+    key: null,
+    prevAction: null,
+    qty: false,
+    quality: false,
+  });
 
   // Edit flow + autosave
   const [isEditing, setIsEditing] = useState(false);
@@ -243,6 +250,46 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
   };
 
+  // Reject modal helpers (top-level)
+  const openRejectModal = (key, prevAction) => {
+    setRejectModal({
+      open: true,
+      key,
+      prevAction: prevAction || null,
+      qty: false,
+      quality: false,
+    });
+  };
+  const closeRejectModal = () => {
+    setRejectModal({
+      open: false,
+      key: null,
+      prevAction: null,
+      qty: false,
+      quality: false,
+    });
+  };
+  const confirmRejectModal = () => {
+    if (!rejectModal.key) return closeRejectModal();
+    const reasons = [];
+    if (rejectModal.qty) reasons.push("Insufficient Quantity");
+    if (rejectModal.quality) reasons.push("Insufficient Quality");
+    if (reasons.length === 0) return; // require at least one
+    const today = new Date().toLocaleDateString("en-CA");
+    setUiByTest((prev) => ({
+      ...prev,
+      [rejectModal.key]: {
+        ...(prev[rejectModal.key] || {}),
+        action: "Rejected",
+        actionDate: today,
+        rejectReasons: reasons,
+      },
+    }));
+    setUserEdited(true);
+    setSaveMsg("");
+    closeRejectModal();
+  };
+
   // Helpers to track focus/blur for each editable control
   const handleFocus = () => {
     focusCountRef.current += 1;
@@ -266,7 +313,6 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     [allRowKeys, selectedKeys]
   );
   const toggleAll = () => {
-    if (!isEditing) return;
     setSelectedKeys((prev) => {
       const next = new Set(prev);
       const every = allRowKeys.every((k) => next.has(k));
@@ -276,7 +322,6 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     });
   };
   const toggleOne = (k) => {
-    if (!isEditing) return;
     setSelectedKeys((prev) => {
       const next = new Set(prev);
       if (next.has(k)) next.delete(k);
@@ -331,7 +376,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
 
         .summary-line {
           display: grid;
-          grid-template-columns: repeat(5, 1fr);
+          grid-template-columns: repeat(4, 1fr);
           gap: 16px;
           padding: 10px 12px;
           border: 1px solid var(--bs-border-color, #dee2e6);
@@ -348,6 +393,10 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
         @media (max-width: 576px)  { .summary-line { grid-template-columns: 1fr; } }
 
         .debug-bar { font-size: 12px; color: #6c757d; padding: 4px 8px; }
+
+        /* Tighter tests table */
+        .tbl-tests { table-layout: fixed; }
+        .tbl-tests th, .tbl-tests td { padding: 6px 8px !important; }
       `}</style>
 
       {/* LEFT: Samples list */}
@@ -479,14 +528,6 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                     {active.CreatedBy ?? "—"}
                   </span>
                 </div>
-                <div>
-                  <span className="label">Status:</span>
-                  <span
-                    className={`value status ${statusTextClass(active.Status)}`}
-                  >
-                    {active.Status ?? "—"}
-                  </span>
-                </div>
               </div>
 
               {/* Controls + status */}
@@ -495,7 +536,12 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                   <button
                     className="btn btn-sm btn-primary"
                     onClick={beginEdit}
-                    disabled={saving}
+                    disabled={saving || selectedKeys.size === 0}
+                    title={
+                      selectedKeys.size === 0
+                        ? "Select at least one test to enable editing"
+                        : "Enter edit mode"
+                    }
                   >
                     Edit
                   </button>
@@ -596,11 +642,10 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                           checked={allSelected}
                           onChange={toggleAll}
                           aria-label="Select all tests"
-                          disabled={!isEditing}
                         />
                       </th>
                       <th>Requested Test</th>
-                      <th>Number of Specimen</th>
+                      <th style={{ width: "6rem" }}>Number of Specimen</th>
                       <th>Status</th>
                       <th>Action</th>
                       <th>Date</th>
@@ -633,13 +678,12 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                                 className="form-check-input"
                                 checked={selectedKeys.has(k)}
                                 onChange={() => toggleOne(k)}
-                                disabled={!isEditing}
                                 aria-label={`Select test ${t.TestName ?? ""}`}
                               />
                             </td>
                             <td>{t.TestName ?? "—"}</td>
 
-                            <td style={{ maxWidth: 160 }}>
+                            <td style={{ maxWidth: 96 }}>
                               {isEditing ? (
                                 <select
                                   className="form-select form-select-sm"
@@ -698,16 +742,31 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                                   onFocus={handleFocus}
                                   onBlur={handleBlur}
                                   onChange={(e) => {
+                                    const val = e.target.value || null;
+                                    const prevVal = String(
+                                      rowUi.action || t.TestStatus || ""
+                                    );
+                                    if (
+                                      val === "Rejected" ||
+                                      val === "Reject"
+                                    ) {
+                                      // Open modal, do not apply change yet
+                                      openRejectModal(k, prevVal);
+                                      return;
+                                    }
                                     setUiByTest((prev) => ({
                                       ...prev,
                                       [k]: {
                                         ...prev[k],
-                                        action: e.target.value || null,
-                                        // record local date string to avoid timezone shift
+                                        action: val,
                                         actionDate:
                                           new Date().toLocaleDateString(
                                             "en-CA"
-                                          ), // "YYYY-MM-DD"
+                                          ),
+                                        // clear reject reasons if not rejected
+                                        ...(val !== "Rejected"
+                                          ? { rejectReasons: [] }
+                                          : {}),
                                       },
                                     }));
                                     setUserEdited(true);
@@ -716,7 +775,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                                 >
                                   <option value="">— Select —</option>
                                   <option>Accepted</option>
-                                  <option>Rejected</option>
+                                  <option>Reject</option>
                                   <option>Not Received</option>
                                 </select>
                               ) : (
@@ -732,6 +791,83 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                   </tbody>
                 </table>
               </div>
+
+              {/* Reject reasons modal */}
+              {rejectModal.open && (
+                <div
+                  className="cmp-modal-backdrop"
+                  role="dialog"
+                  aria-modal="true"
+                  onMouseDown={(e) => {
+                    if (e.target.classList.contains("cmp-modal-backdrop"))
+                      closeRejectModal();
+                  }}
+                >
+                  <div className="cmp-modal" style={{ maxWidth: 520 }}>
+                    <div className="header">
+                      <h5 className="m-0">Rejection Reason</h5>
+                    </div>
+                    <div className="body">
+                      <p className="mb-2">Select reason(s) for rejection:</p>
+                      <div className="form-check">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id="rejQty"
+                          checked={rejectModal.qty}
+                          onChange={(e) =>
+                            setRejectModal((m) => ({
+                              ...m,
+                              qty: e.target.checked,
+                            }))
+                          }
+                        />
+                        <label className="form-check-label" htmlFor="rejQty">
+                          Insufficient Quantity
+                        </label>
+                      </div>
+                      <div className="form-check">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id="rejQuality"
+                          checked={rejectModal.quality}
+                          onChange={(e) =>
+                            setRejectModal((m) => ({
+                              ...m,
+                              quality: e.target.checked,
+                            }))
+                          }
+                        />
+                        <label
+                          className="form-check-label"
+                          htmlFor="rejQuality"
+                        >
+                          Insufficient Quality
+                        </label>
+                      </div>
+                      <div className="form-text mt-2">
+                        You can choose one or both options.
+                      </div>
+                    </div>
+                    <div className="footer">
+                      <button
+                        className="btn btn-light"
+                        onClick={closeRejectModal}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="btn btn-danger"
+                        onClick={confirmRejectModal}
+                        disabled={!rejectModal.qty && !rejectModal.quality}
+                      >
+                        Confirm Reject
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>

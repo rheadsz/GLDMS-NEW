@@ -14,10 +14,10 @@ const ASSIGNMENTS_API_BASE = "http://localhost:3001/api/assignments"; // will ca
 function AppWithSidebar() {
   // Tabs
   const TAB_CONFIG = [
-    { key: "samples", label: "Samples" },
-    { key: "assignments", label: "Assignments" },
-    { key: "tests", label: "Test Management" },   // renamed
-    { key: "staff", label: "Lab Management" },    // renamed
+    { key: "samples", label: "Check in Requests" },
+    { key: "assignments", label: "Assign Tests" },
+    { key: "tests", label: "Test Management" }, // renamed
+    { key: "staff", label: "Lab Management" }, // renamed
   ];
 
   const [activeTab, setActiveTab] = useState("samples");
@@ -137,7 +137,10 @@ function AppWithSidebar() {
           resultMap[req.RequestID] = hasUnassigned;
         }
       }
-      const workers = Array.from({ length: Math.min(CONCURRENCY, list.length) }, () => worker());
+      const workers = Array.from(
+        { length: Math.min(CONCURRENCY, list.length) },
+        () => worker()
+      );
       await Promise.all(workers);
 
       if (!cancelled) {
@@ -149,7 +152,9 @@ function AppWithSidebar() {
     if (activeTab === "assignments") {
       refreshAttention(requests);
     }
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, requests]);
 
@@ -185,7 +190,8 @@ function AppWithSidebar() {
   const filteredRequests = useMemo(() => {
     if (activeTab !== "assignments") return [];
     const list = (requests || []).filter((req) => {
-      if (reqStatusFilter !== "All" && req.Status !== reqStatusFilter) return false;
+      if (reqStatusFilter !== "All" && req.Status !== reqStatusFilter)
+        return false;
       return true;
     });
     list.sort((a, b) => {
@@ -214,7 +220,9 @@ function AppWithSidebar() {
         .lm-topbar { background: var(--bs-light); border-bottom: 1px solid var(--bs-border-color, #dee2e6); }
         .lm-main { display: flex; min-height: 0; flex: 1 1 auto; }
         .lm-sidebar {
-          width: ${sidebarOpen ? `${SIDEBAR_OPEN_PX}px` : `${SIDEBAR_CLOSED_PX}px`};
+          width: ${
+            sidebarOpen ? `${SIDEBAR_OPEN_PX}px` : `${SIDEBAR_CLOSED_PX}px`
+          };
           transition: width 240ms ease;
           overflow: hidden;
           border-right: 1px solid var(--bs-border-color, #dee2e6);
@@ -258,15 +266,26 @@ function AppWithSidebar() {
           onClick={toggleSidebar}
           title={sidebarOpen ? "Hide left panel" : "Show left panel"}
         >
-          <span className="d-inline-block" style={{ lineHeight: 0, fontSize: 20 }}>☰</span>
+          <span
+            className="d-inline-block"
+            style={{ lineHeight: 0, fontSize: 20 }}
+          >
+            ☰
+          </span>
         </button>
 
         <div className="d-flex gap-2 flex-wrap">
           {TAB_CONFIG.map(({ key, label }) => (
             <button
               key={key}
-              className={`btn ${activeTab === key ? "btn-primary" : "btn-outline-primary"}`}
-              style={{ padding: "10px 18px", fontSize: "16px", fontWeight: "500" }}
+              className={`btn ${
+                activeTab === key ? "btn-primary" : "btn-outline-primary"
+              }`}
+              style={{
+                padding: "10px 18px",
+                fontSize: "16px",
+                fontWeight: "500",
+              }}
               onClick={() => setActiveTab(key)}
             >
               {label}
@@ -282,7 +301,12 @@ function AppWithSidebar() {
           <aside className="lm-sidebar d-flex flex-column">
             <div className="lm-sticky-head p-3 d-flex justify-content-between align-items-center border-bottom bg-white">
               <h5 className="m-0">Assignments</h5>
-              {(reqLoading || needsAttentionLoading) && <span className="spinner-border spinner-border-sm" title="Loading" />}
+              {(reqLoading || needsAttentionLoading) && (
+                <span
+                  className="spinner-border spinner-border-sm"
+                  title="Loading"
+                />
+              )}
             </div>
 
             {/* Filters */}
@@ -341,12 +365,15 @@ function AppWithSidebar() {
                     </tr>
                   ) : (
                     filteredRequests.map((req) => {
-                      const isActive = selectedRequest?.RequestID === req.RequestID;
+                      const isActive =
+                        selectedRequest?.RequestID === req.RequestID;
                       const needs = !!needsAttention[req.RequestID];
                       return (
                         <tr
                           key={req.RequestID}
-                          className={`${isActive ? "table-primary" : ""} ${needs ? "needs-attention-row" : ""}`}
+                          className={`${isActive ? "table-primary" : ""} ${
+                            needs ? "needs-attention-row" : ""
+                          }`}
                           style={{ cursor: "pointer" }}
                           onClick={() => setSelectedRequest(req)}
                           tabIndex={0}
@@ -357,17 +384,27 @@ function AppWithSidebar() {
                             }
                           }}
                           aria-selected={isActive}
-                          title={needs ? "This request has unassigned tests" : undefined}
+                          title={
+                            needs
+                              ? "This request has unassigned tests"
+                              : undefined
+                          }
                         >
                           <td className="mono text-center">
                             <span className="linklike">{req.RequestID}</span>
-                            {needs && <span className="ms-2 align-middle dot" />}
+                            {needs && (
+                              <span className="ms-2 align-middle dot" />
+                            )}
                           </td>
                           <td className="mono text-start">
-                            <span className="linklike">{req.EfisProjectId ?? "—"}</span>
+                            <span className="linklike">
+                              {req.EfisProjectId ?? "—"}
+                            </span>
                           </td>
                           <td className="text-start">
-                            <span className="linklike">{req.CreatedBy ?? "—"}</span>
+                            <span className="linklike">
+                              {req.CreatedBy ?? "—"}
+                            </span>
                           </td>
                         </tr>
                       );

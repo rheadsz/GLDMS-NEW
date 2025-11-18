@@ -68,8 +68,8 @@ function AssignmentDetails({
   }
 
   const FIELD_LABELS = {
-    AssignedTester: "Assigned Tester",
-    ResultDueDate: "Result Due Date",
+    AssignedTester: "Tester",
+    ResultDueDate: "Due",
     ReportDueDate: "Report Due Date",
     Comments: "Comments",
     Notes: "Comments",
@@ -677,7 +677,7 @@ function AssignmentDetails({
               Assigned: {assignedCount}
             </span>
             <span className="badge rounded-pill text-bg-secondary">
-              Unassigned Requests: {unassignedCount}
+              Checked in: {unassignedCount}
             </span>
           </div>
         </div>
@@ -698,9 +698,9 @@ function AssignmentDetails({
         </div>
       </div>
 
-      {/* Requested Result Due (constant) */}
+      {/* Requested Due (constant) */}
       <div className="mb-3">
-        <strong>Requested Result Due:</strong>{" "}
+        <strong>Requested Due:</strong>{" "}
         <span className="mono">{requestedDueTop}</span>
       </div>
 
@@ -719,8 +719,8 @@ function AssignmentDetails({
             <th>Requested Test</th>
             <th>Sample (Borehole ID-Depth)</th>
             <th>Request Submission Date</th>
-            <th>Assigned Tester</th>
-            <th>Result Due</th>
+            <th>Tester</th>
+            <th>Due</th>
             <th>Status</th>
             <th style={{ width: "10.5rem" }}>Actions</th>
           </tr>
@@ -848,7 +848,7 @@ function AssignmentDetails({
                       </span>
                     ) : (
                       <span className="badge rounded-pill text-bg-secondary">
-                        Unassigned
+                        Checked in
                       </span>
                     )}
                     {isSubmitting && (
@@ -972,7 +972,7 @@ function AssignmentDetails({
 
               <div className="row">
                 <div className="col-sm-6 mb-3">
-                  <label className="form-label">Result Due</label>
+                  <label className="form-label">Due</label>
                   <input
                     type="date"
                     className="form-control"
@@ -996,7 +996,7 @@ function AssignmentDetails({
               </div>
 
               <div className="form-text">
-                * A tester and Delivery Due (or Result Due) are required.
+                * A tester and Delivery Due (or Due) are required.
               </div>
             </div>
             <div className="footer">
@@ -1060,7 +1060,7 @@ function AssignmentDetails({
 
               <div className="row">
                 <div className="col-sm-6 mb-3">
-                  <label className="form-label">Result Due</label>
+                  <label className="form-label">Due</label>
                   <input
                     type="date"
                     className="form-control"

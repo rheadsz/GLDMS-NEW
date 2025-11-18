@@ -509,6 +509,10 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
               {/* Summary header */}
               <div className="summary-line">
                 <div>
+                  <span className="label">Request No.:</span>
+                  <span className="value mono">{active.RequestID ?? "—"}</span>
+                </div>
+                <div>
                   <span className="label">Sample ID:</span>
                   <span className="value mono">{active.SampleID ?? "—"}</span>
                 </div>
@@ -517,10 +521,6 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                   <span className="value mono">
                     {active.EfisProjectID ?? "—"}
                   </span>
-                </div>
-                <div>
-                  <span className="label">Request No.:</span>
-                  <span className="value mono">{active.RequestID ?? "—"}</span>
                 </div>
                 <div>
                   <span className="label">Submitter:</span>
@@ -630,7 +630,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                 </table>
               </div>
 
-              {/* TABLE 2: Requested tests / assignment */}
+              {/* TABLE 2: Requested tests / check-in status */}
               <div className="table-responsive mt-3">
                 <table className="table table-bordered table-sm mb-0">
                   <thead className="table-light">
@@ -647,14 +647,13 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                       <th>Requested Test</th>
                       <th style={{ width: "6rem" }}>Number of Specimen</th>
                       <th>Status</th>
-                      <th>Action</th>
                       <th>Date</th>
                     </tr>
                   </thead>
                   <tbody>
                     {activeTests.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="text-center text-muted">
+                        <td colSpan={5} className="text-center text-muted">
                           No tests for this sample.
                         </td>
                       </tr>
@@ -670,13 +669,26 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                         // Prefer DB DateAssigned (YYYY-MM-DD), fallback to local actionDate (YYYY-MM-DD)
                         const displayDate = t.DateAssigned || rowUi.actionDate;
 
+                        const isSelected = selectedKeys.has(k);
+                        // Underlying status from DB or UI; fallback to null
+                        const rawStatus = rowUi.action || t.TestStatus || null;
+                        let displayStatus = rawStatus;
+                        if (!displayStatus) displayStatus = "Requested";
+                        // While in edit mode, if row not selected, show Requested
+                        if (isEditing && !isSelected) {
+                          displayStatus = "Requested";
+                        } else if (!isEditing && displayStatus === "Accepted") {
+                          // View mode mapping: Accepted -> Checked-in
+                          displayStatus = "Checked-in";
+                        }
+
                         return (
                           <tr key={k}>
                             <td className="text-center">
                               <input
                                 type="checkbox"
                                 className="form-check-input"
-                                checked={selectedKeys.has(k)}
+                                checked={isSelected}
                                 onChange={() => toggleOne(k)}
                                 aria-label={`Select test ${t.TestName ?? ""}`}
                               />
@@ -716,16 +728,9 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                               )}
                             </td>
 
-                            {/* Status (from DB) */}
+                            {/* Status (editable in place) */}
                             <td>
-                              <span className={statusTextClass(t.TestStatus)}>
-                                {t.TestStatus ?? "—"}
-                              </span>
-                            </td>
-
-                            {/* Action (edit control) */}
-                            <td style={{ maxWidth: 200 }}>
-                              {isEditing ? (
+                              {isEditing && isSelected ? (
                                 <select
                                   className="form-select form-select-sm"
                                   value={
@@ -774,12 +779,14 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                                   }}
                                 >
                                   <option value="">— Select —</option>
-                                  <option>Accepted</option>
+                                  <option value="Accepted">Checked-in</option>
                                   <option>Reject</option>
                                   <option>Not Received</option>
                                 </select>
                               ) : (
-                                <span>—</span>
+                                <span className={statusTextClass(rawStatus)}>
+                                  {displayStatus}
+                                </span>
                               )}
                             </td>
 

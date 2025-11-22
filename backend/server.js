@@ -15,8 +15,8 @@ console.log("Starting server.js...");
 // If your frontend runs on a different origin/port, keep credentials:true.
 app.use(
   cors({
-    origin: true,          // reflect the request origin
-    credentials: true,     // allow cookies so sessions work cross-origin
+    origin: true, // reflect the request origin
+    credentials: true, // allow cookies so sessions work cross-origin
   })
 );
 app.use(express.json());
@@ -30,8 +30,8 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      sameSite: "lax",   // use 'none' + secure:true if cross-site over HTTPS
-      secure: false,     // set true when serving over HTTPS
+      sameSite: "lax", // use 'none' + secure:true if cross-site over HTTPS
+      secure: false, // set true when serving over HTTPS
       maxAge: 1000 * 60 * 60 * 8, // 8 hours
     },
   })
@@ -95,6 +95,10 @@ app.use("/api/pdf", pdfRoutes);
 // ✅ Assignments router (relies on req.session.* for user stamping)
 const assignmentsRouter = require("./routes/assignments")(db);
 app.use("/api", assignmentsRouter);
+
+// Check-in samples router (frontend replica of supervisor.js for the Check in Samples tab)
+const checkInSamplesRoutes = require("./routes/checkInSamples")(db);
+app.use("/api", checkInSamplesRoutes);
 
 // Request samples router
 const requestSamplesRoutes = require("./routes/request-samples")(db);
@@ -187,7 +191,8 @@ app.post("/api/login", (req, res) => {
 
 // Quick helper to verify session is set
 app.get("/api/me", (req, res) => {
-  if (!req.session?.userId) return res.status(401).json({ message: "Not signed in" });
+  if (!req.session?.userId)
+    return res.status(401).json({ message: "Not signed in" });
   res.json({
     ok: true,
     userId: req.session.userId,

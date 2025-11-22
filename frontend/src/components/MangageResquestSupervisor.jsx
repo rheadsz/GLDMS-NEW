@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import AssignmentDetails from "./AssignmentDetails";
 import SamplesDetails from "./SamplesDetails";
 import TestManagement from "./TestManagement";
+import CheckInSamples from "./CheckInSamples";
 
 // API endpoints
 const REQUESTS_API = "http://localhost:3001/api/supervisor/requests";
@@ -14,6 +15,7 @@ const ASSIGNMENTS_API_BASE = "http://localhost:3001/api/assignments"; // will ca
 function AppWithSidebar() {
   // Tabs
   const TAB_CONFIG = [
+    { key: "checkins", label: "Check in Samples" },
     { key: "samples", label: "Check in Requests" },
     { key: "assignments", label: "Assign Tests" },
     { key: "tests", label: "Test Management" }, // renamed
@@ -427,6 +429,14 @@ function AppWithSidebar() {
             </div>
           </section>
         </div>
+      ) : activeTab === "checkins" ? (
+        // Check in Samples: exact replica of Check in Requests behavior
+        <CheckInSamples
+          samples={samples}
+          selectedSample={selectedSample}
+          onSelectSample={setSelectedSample}
+          sidebarOpen={sidebarOpen}
+        />
       ) : activeTab === "samples" ? (
         // Samples layout handled inside SamplesDetails
         <SamplesDetails

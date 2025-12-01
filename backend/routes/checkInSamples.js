@@ -1,22 +1,21 @@
+// routes/checkInSamples.js
 const express = require("express");
 
-// routes/checkInSamples.js
-// Backend replica for the "Check in Samples" tab.
-// It exposes the same data as supervisor.js (requests + samples)
-// but under a separate /api/checkin/* prefix.
+// Backend for the "Check in Samples" tab.
+// Mount under /api, e.g. app.use("/api", require("./routes/checkInSamples")(db));
 
 module.exports = (db) => {
   const router = express.Router();
 
   // GET /api/checkin/requests
-  // Returns: RequestID, ProjectID, EfisProjectId, CreatedBy, Status
+  // Returns: RequestID, ProjectID, EfisProjectID, CreatedBy, Status
   router.get("/checkin/requests", (_req, res) => {
     console.log("[REQ] GET /api/checkin/requests");
     const sql = `
       SELECT 
         pr.RequestID,
         pr.ProjectID,
-        p.EfisProjectId   AS EfisProjectId,
+        p.EfisProjectID   AS EfisProjectID,
         p.CreatedBy       AS CreatedBy,
         pr.Status
       FROM project_requests AS pr
@@ -35,14 +34,22 @@ module.exports = (db) => {
   });
 
   // GET /api/checkin/samples
-  // Generic list: SampleID, EfisProjectId, CreatedBy, Status, RequestId
+  // Generic list used by the frontend component:
+  // SampleID, BoreholeID, DepthFrom, DepthTo, ContainerType,
+  // FieldCollectionDate, ActionStatus, RequestId, EfisProjectID, CreatedBy, Status
   router.get("/checkin/samples", (_req, res) => {
     console.log("[REQ] GET /api/checkin/samples");
     const sql = `
       SELECT
         ps.SampleID,
+        ps.BoreholeID,
+        ps.DepthFrom,
+        ps.DepthTo,
+        ps.ContainerType,
+        ps.FieldCollectionDate,
+        ps.ActionStatus,
         ps.RequestID                 AS RequestId,
-        p.EfisProjectId              AS EfisProjectId,
+        p.EfisProjectID              AS EfisProjectID,
         COALESCE(pr.RequestingUser, p.CreatedBy) AS CreatedBy,
         pr.Status                    AS Status
       FROM project_samples ps
@@ -63,7 +70,7 @@ module.exports = (db) => {
   });
 
   // GET /api/checkin/request-samples/:requestId
-  // Request-scoped list: SampleID, BoreholeID, RequestId, EfisProjectId, CreatedBy, Status
+  // Request-scoped list (same core columns as /checkin/samples)
   router.get("/checkin/request-samples/:requestId", (req, res) => {
     const { requestId } = req.params;
     console.log(`[REQ] GET /api/checkin/request-samples/${requestId}`);
@@ -72,12 +79,19 @@ module.exports = (db) => {
       SELECT
         ps.SampleID,
         ps.BoreholeID,
+        ps.DepthFrom,
+        ps.DepthTo,
+        ps.ContainerType,
+        ps.FieldCollectionDate,
+        ps.ActionStatus,
         ps.RequestID                 AS RequestId,
-        p.EfisProjectId              AS EfisProjectId,
+        p.EfisProjectID              AS EfisProjectID,
         COALESCE(pr.RequestingUser, p.CreatedBy) AS CreatedBy,
         pr.Status                    AS Status
       FROM project_samples ps
       JOIN project_requests pr ON ps.RequestID = pr.RequestID
+      JOIN project_boreholes pb ON pb.BoreholeID = ps.BoreholeID
+      JOIN project_structures st ON st.StructureID = pb.StructureID
       JOIN project p          ON pr.ProjectID = p.ProjectID
       WHERE pr.RequestID = ?
       ORDER BY ps.SampleID DESC

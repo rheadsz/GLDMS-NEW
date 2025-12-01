@@ -7,7 +7,7 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
   const [rows, setRows] = useState([]);
   const [active, setActive] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState(null);
+  const [err, setErr] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
   const [actionSavingId, setActionSavingId] = useState(null);
   const [actionMsg, setActionMsg] = useState("");
@@ -18,17 +18,19 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
     setLoading(true);
     setErr(null);
     setRows([]);
-    // keep current active selection when refreshing so status persists
 
     async function load() {
       try {
-        const r = await fetch("/api/supervisor/request-samples");
+        const r = await fetch("/api/checkin/samples");
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const items = await r.json();
         if (cancelled) return;
+
         const all = Array.isArray(items) ? items : [];
         const filtered = requestId
-          ? all.filter((row) => String(row.RequestID) === String(requestId))
+          ? all.filter(
+              (row) => String(row.RequestID ?? row.RequestId) === String(requestId)
+            )
           : all;
         setRows(filtered);
       } catch (e) {
@@ -37,6 +39,7 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
         if (!cancelled) setLoading(false);
       }
     }
+
     load();
     return () => {
       cancelled = true;
@@ -58,7 +61,6 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
     const arr = [];
     for (const [requestKey, list] of groupedByRequest) {
       if (!list || list.length === 0) continue;
-      // Store back the numeric RequestID if present, otherwise the key
       const first = list[0];
       arr.push({
         ...first,
@@ -95,7 +97,6 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
     return label;
   };
 
-  // Save sample-level action to backend (project_samples.ActionStatus)
   const updateSampleAction = async (sampleId, label) => {
     const action = normalizeAction(label);
     if (!action) return;
@@ -110,7 +111,6 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
 
-      // optionally reflect the new ActionStatus in local state
       setRows((prev) =>
         prev.map((row) =>
           row.SampleID === sampleId
@@ -118,6 +118,7 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
             : row
         )
       );
+
       if (active && active.SampleID === sampleId) {
         setActive((prev) =>
           prev ? { ...prev, ActionStatus: data.actionStatus ?? action } : prev
@@ -130,6 +131,17 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
     } finally {
       setActionSavingId(null);
     }
+  };
+
+  const currentActionStatus = (() => {
+    if (!active) return "";
+    const latest = rows.find((r) => r.SampleID === active.SampleID);
+    return latest?.ActionStatus ?? active.ActionStatus ?? "";
+  })();
+
+  const handleSelectRequest = (reqRow) => {
+    setActive(reqRow);
+    setActionEditable(false);
   };
 
   return (
@@ -197,18 +209,19 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
               ) : (
                 requestSummaries.map((r) => {
                   const isActive =
-                    (active?.RequestID ?? active?.id) === (r.RequestID ?? r.id);
+                    (active?.RequestID ?? active?.id) ===
+                    (r.RequestID ?? r.id);
                   return (
                     <tr
                       key={r.RequestID ?? `${r.EfisProjectID}-${r.CreatedBy}`}
                       className={isActive ? "table-primary" : ""}
                       style={{ cursor: "pointer" }}
-                      onClick={() => setActive(r)}
+                      onClick={() => handleSelectRequest(r)}
                       tabIndex={0}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          setActive(r);
+                          handleSelectRequest(r);
                         }
                       }}
                       aria-selected={isActive}
@@ -228,8 +241,8 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
           </table>
         </div>
 
-        <div className="debug-bar">
-          endpoint: <code>/api/supervisor/request-samples</code>
+        <div className="debug-bar p-2 small border-top">
+          endpoint: <code>/api/checkin/samples</code>
           {requestId ? (
             <>
               {" "}
@@ -285,7 +298,9 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                           className="form-check-input"
                           checked={actionEditable}
                           disabled={actionSavingId === active.SampleID}
-                          onChange={(e) => setActionEditable(e.target.checked)}
+                          onChange={(e) =>
+                            setActionEditable(e.target.checked)
+                          }
                         />
                       </td>
                       <td>{active.SampleID ?? "—"}</td>
@@ -298,33 +313,22 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                         {actionEditable ? (
                           <select
                             className="form-select form-select-sm"
-                            defaultValue=""
+                            value={currentActionStatus || ""}
                             disabled={actionSavingId === active.SampleID}
                             onChange={(e) => {
                               const label = e.target.value;
                               if (!label) return;
                               updateSampleAction(active.SampleID, label);
-                              e.target.value = "";
-                              // After changing, make the cell read-only again
                               setActionEditable(false);
                             }}
                           >
-                            <option value="" disabled>
-                              — Select —
-                            </option>
+                            <option value="">— Select —</option>
                             <option value="Checked in">Checked in</option>
-                            <option value="Reject">Reject</option>
+                            <option value="Rejected">Rejected</option>
                             <option value="Not Received">Not Received</option>
                           </select>
                         ) : (
-                          (() => {
-                            const latest = rows.find(
-                              (r) => r.SampleID === active.SampleID
-                            );
-                            const status =
-                              latest?.ActionStatus ?? active.ActionStatus;
-                            return <span>{status ?? "—"}</span>;
-                          })()
+                          <span>{currentActionStatus || "—"}</span>
                         )}
                       </td>
                     </tr>

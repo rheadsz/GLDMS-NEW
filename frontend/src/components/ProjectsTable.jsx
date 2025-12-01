@@ -268,7 +268,7 @@ function ProjectsTable() {
           displayId: project.EfisProjectId || project.ProjectID
         }));
     } else {
-      // For Your Projects tab, filter by isYourProject
+      // For My Projects tab, filter by isYourProject
       filtered = projects
         .filter(project => (
           project.ProjectID?.toString().toLowerCase().includes(searchFilters.projectId.toLowerCase()) &&
@@ -372,7 +372,7 @@ function ProjectsTable() {
             className={`nav-link ${activeTab === 'yours' ? 'active' : ''}`}
             onClick={() => setActiveTab('yours')}
           >
-            Your Projects
+            My Projects
           </button>
         </li>
       </ul>

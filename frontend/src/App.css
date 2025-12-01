@@ -56,3 +56,8 @@
   background: #fff;
   box-shadow: 0 2px 4px rgba(0,0,0,0.03);
 }
+
+/* Add padding to main content when header is fixed */
+.main-content-with-fixed-header {
+  padding-top: 100px !important;
+}

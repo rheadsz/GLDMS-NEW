@@ -113,21 +113,19 @@ function AppRoutes({
   if (!signedIn) {
     return (
       <Routes>
-        {/* Default sign-in screen */}
-        <Route
-          path="/*"
+        <Route 
+          path="/login" 
           element={
-            <div className="min-vh-100 bg-light">
+            <div className="min-vh-100 bg-light d-flex flex-column main-content-with-fixed-header">
               <Header showSignOut={false} userName="" />
-              <div
-                className="d-flex flex-column align-items-center justify-content-center"
-                style={{ minHeight: "calc(100vh - 72px)" }}
-              >
+              <div className="flex-grow-1 d-flex align-items-center justify-content-center">
                 <SignInBox onSignIn={handleSignIn} />
               </div>
             </div>
-          }
+          } 
         />
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        {/* Keep other routes below */}
       </Routes>
     );
   }
@@ -160,7 +158,7 @@ function AppRoutes({
         <Route
           path="/supervisor"
           element={
-            <div className="min-vh-100 bg-light">
+            <div className="min-vh-100 bg-light main-content-with-fixed-header">
               <Header
                 showSignOut={true}
                 userName={userName}
@@ -178,7 +176,7 @@ function AppRoutes({
         <Route
           path="/manage-requests"
           element={
-            <div className="min-vh-100 bg-light">
+            <div className="min-vh-100 bg-light main-content-with-fixed-header">
               <Header
                 showSignOut={true}
                 userName={userName}
@@ -207,7 +205,7 @@ function AppRoutes({
       <Route
         path="/tester"
         element={
-          <div className="min-vh-100 bg-light">
+          <div className="min-vh-100 bg-light main-content-with-fixed-header">
             <Header
               showSignOut={true}
               userName={userName}
@@ -228,7 +226,7 @@ function AppRoutes({
       <Route
         path="/menu"
         element={
-          <div className="min-vh-100 bg-light">
+          <div className="min-vh-100 bg-light d-flex flex-column main-content-with-fixed-header">
             <Header
               showSignOut={true}
               userName={userName}
@@ -239,16 +237,14 @@ function AppRoutes({
                 navigate("/");
               }}
             />
-            <div className="container py-4">
-              <div className="row mb-4">
-                <div className="col-12">
-                  <div className="d-flex justify-content-between align-items-center mb-3">
-                    <h4 className="m-0">Projects</h4>
-                  </div>
-                  <div className="card shadow">
-                    <div className="card-body p-0">
-                      <SimpleProjectsTable />
-                    </div>
+            <div className="flex-grow-1 d-flex flex-column">
+              <div className="container-fluid flex-grow-1 d-flex flex-column p-3 p-md-4">
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <h4 className="m-0">Projects</h4>
+                </div>
+                <div className="card shadow flex-grow-1 d-flex">
+                  <div className="card-body p-0 flex-grow-1 d-flex flex-column">
+                    <SimpleProjectsTable />
                   </div>
                 </div>
               </div>
@@ -260,7 +256,7 @@ function AppRoutes({
       <Route
         path="/projects"
         element={
-          <div className="min-vh-100 bg-light">
+          <div className="min-vh-100 bg-light main-content-with-fixed-header">
             <Header
               showSignOut={true}
               userName={userName}
@@ -279,7 +275,7 @@ function AppRoutes({
       <Route
         path="/create-project"
         element={
-          <div className="min-vh-100 bg-light">
+          <div className="min-vh-100 bg-light main-content-with-fixed-header">
             <Header
               showSignOut={true}
               userName={userName}
@@ -324,7 +320,7 @@ function AppRoutes({
       <Route
         path="/main"
         element={
-          <div className="min-vh-100 bg-light text-dark">
+          <div className="min-vh-100 bg-light text-dark main-content-with-fixed-header">
             <Header
               showSignOut={true}
               userName={userName}

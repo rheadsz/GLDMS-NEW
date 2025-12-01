@@ -183,10 +183,62 @@ function SimpleProjectsTable() {
               paddingBottom: '15px',
               borderBottom: '2px solid #0d6efd'
             }}>
-              <h5 className="mb-0" style={{ color: '#0d6efd', fontWeight: '600' }}>
-                <i className="bi bi-folder2-open me-2"></i>
-                All Projects
-              </h5>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <button
+                  onClick={() => setActiveTab('all')}
+                  style={{
+                    background: activeTab === 'all' ? '#0d6efd' : 'transparent',
+                    color: activeTab === 'all' ? '#fff' : '#0d6efd',
+                    border: '2px solid #0d6efd',
+                    borderRadius: '6px',
+                    padding: '8px 16px',
+                    cursor: 'pointer',
+                    fontWeight: '600',
+                    fontSize: '14px',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (activeTab !== 'all') {
+                      e.currentTarget.style.backgroundColor = '#e7f3ff';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (activeTab !== 'all') {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }
+                  }}
+                >
+                  <i className="bi bi-folder2-open me-2"></i>
+                  All Projects
+                </button>
+                <button
+                  onClick={() => setActiveTab('yours')}
+                  style={{
+                    background: activeTab === 'yours' ? '#0d6efd' : 'transparent',
+                    color: activeTab === 'yours' ? '#fff' : '#0d6efd',
+                    border: '2px solid #0d6efd',
+                    borderRadius: '6px',
+                    padding: '8px 16px',
+                    cursor: 'pointer',
+                    fontWeight: '600',
+                    fontSize: '14px',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (activeTab !== 'yours') {
+                      e.currentTarget.style.backgroundColor = '#e7f3ff';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (activeTab !== 'yours') {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }
+                  }}
+                >
+                  <i className="bi bi-person-circle me-2"></i>
+                  My Projects
+                </button>
+              </div>
               <button
                 onClick={() => setShowTableSidebar(false)}
                 style={{
@@ -347,7 +399,7 @@ function SimpleProjectsTable() {
             className={`nav-link ${activeTab === 'yours' ? 'active' : ''}`}
             onClick={() => setActiveTab('yours')}
           >
-            Your Projects
+            My Projects
           </button>
         </li>
       </ul>

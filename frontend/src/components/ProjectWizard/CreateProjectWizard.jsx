@@ -16,29 +16,105 @@ const sections = [
   { label: "Tests" },
 ];
 
+const ALLOWED_TEST_NAMES = [
+  "Moisture Content",
+  "Unit Weight",
+  "Specific Gravity",
+  "Particle Size Analysis",
+  "Plasticity Index",
+  "No. 200 Sieve Wash",
+  "Particle Size Distribution - Sieve Analysis",
+  "Particle Size Distribution - Hydrometer",
+  "Consolidation",
+  "Direct Shear",
+  "Triaxial - CUe",
+  "Triaxial - UU",
+  "Unconfined Compression – Soil",
+  "Unconfined Compression – Rock",
+  "Point Load",
+  "Permeability/Hydraulic Conductivity",
+  "Swell/Collapse Potential",
+  "Expansion Index",
+  "Compaction Curve",
+  "Sand Equivalent",
+  "Corrosion"
+];
+
+const normalizeTestType = (entry) => {
+  if (!entry) return null;
+  const name = (entry.TestName || entry.name || entry.label || "").trim();
+  if (!name) return null;
+  return {
+    id: entry.TestTypeID ?? entry.id ?? name,
+    name,
+    method: entry.Method || entry.method || (Array.isArray(entry.methods) ? entry.methods.join(", ") : entry.methods) || ""
+  };
+};
+
 function CreateProjectWizard({ userName, userEmail, userPhone, supervisors = [], officeOptions = [], branchOptions = [], districtOptions = [], countyOptions = [], testTypes = [] }) {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState(0);
-  const [formData, setFormData] = useState({
-    RequesterInfo: {
-      requesterName: userName || "",
-      requesterEmail: userEmail || "",
-      requesterPhone: userPhone || "",
-      officeOptions,
-      branchOptions,
-      supervisorName: "",
-      supervisorEmail: "",
-      supervisorPhone: "",
-      testResultsDueDate: ""
-    },
-    ProjectInfo: { districtOptions, countyOptions },
-    Boreholes: { structures: [] },
-    ChargingCode: {},
-    SampleInfoSets: [{}],  // Array of sample info sets, each containing 3 samples
-    TestsInfo: {},
-    Comments: {}
+  
+  // Initialize formData from localStorage if available
+  const [formData, setFormData] = useState(() => {
+    const savedData = localStorage.getItem('projectWizardDraft');
+    if (savedData) {
+      try {
+        const parsed = JSON.parse(savedData);
+        // Merge with default structure to ensure all fields exist
+        return {
+          RequesterInfo: {
+            requesterName: userName || "",
+            requesterEmail: userEmail || "",
+            requesterPhone: userPhone || "",
+            officeOptions,
+            branchOptions,
+            ...parsed.RequesterInfo
+          },
+          ProjectInfo: { districtOptions, countyOptions, ...parsed.ProjectInfo },
+          Boreholes: parsed.Boreholes || { structures: [] },
+          ChargingCode: parsed.ChargingCode || {},
+          SampleInfoSets: parsed.SampleInfoSets || [{}],
+          TestsInfo: parsed.TestsInfo || {},
+          Comments: parsed.Comments || {}
+        };
+      } catch (e) {
+        console.error('Error loading draft from localStorage:', e);
+      }
+    }
+    // Default initial state
+    return {
+      RequesterInfo: {
+        requesterName: userName || "",
+        requesterEmail: userEmail || "",
+        requesterPhone: userPhone || "",
+        officeOptions,
+        branchOptions,
+        supervisorName: "",
+        supervisorEmail: "",
+        supervisorPhone: "",
+        testResultsDueDate: ""
+      },
+      ProjectInfo: { districtOptions, countyOptions },
+      Boreholes: { structures: [] },
+      ChargingCode: {},
+      SampleInfoSets: [{}],
+      TestsInfo: {},
+      Comments: {}
+    };
   });
+  
   const [comments, setComments] = useState("");
+  const [testTypeOptions, setTestTypeOptions] = useState(ALLOWED_TEST_NAMES);
+  const derivedChargingProjectId = formData.TestsInfo?.chargingProjectID ??
+    formData.ProjectInfo?.projectID ??
+    formData.ProjectInfo?.efisProjectId ??
+    "";
+  
+  // Save formData to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('projectWizardDraft', JSON.stringify(formData));
+  }, [formData]);
 
   // Keep requester info in sync with logged-in user
   useEffect(() => {
@@ -52,6 +128,34 @@ function CreateProjectWizard({ userName, userEmail, userPhone, supervisors = [],
       }
     }));
   }, [userName, userEmail, userPhone]);
+
+  useEffect(() => {
+    const fetchTestTypes = async () => {
+      try {
+        const { data } = await axios.get("/api/test-types");
+        const normalized = (data || [])
+          .map(normalizeTestType)
+          .filter(Boolean);
+
+        const names = new Set(normalized.map(({ name }) => name));
+        const filtered = ALLOWED_TEST_NAMES.filter(name => names.has(name));
+
+        if (filtered.length === ALLOWED_TEST_NAMES.length) {
+          setTestTypeOptions(filtered);
+        } else {
+          const missing = ALLOWED_TEST_NAMES.filter(name => !names.has(name));
+          if (missing.length) {
+            console.warn("Some allowed tests are not in the backend list:", missing);
+          }
+          setTestTypeOptions(ALLOWED_TEST_NAMES);
+        }
+      } catch (err) {
+        console.error("Failed to load test types", err);
+      }
+    };
+
+    fetchTestTypes();
+  }, []);
 
   const handleSectionChange = (idx) => setActiveSection(idx);
   const handleSectionDataChange = (section, data) => {
@@ -70,6 +174,16 @@ function CreateProjectWizard({ userName, userEmail, userPhone, supervisors = [],
     } else {
       setFormData(prev => ({ ...prev, [section]: data }));
     }
+  };
+
+  const handleChargingCodeCommentChange = (value) => {
+    setFormData(prev => ({
+      ...prev,
+      TestsInfo: {
+        ...prev.TestsInfo,
+        chargingCodeComment: value
+      }
+    }));
   };
 
   const handleAddSample = () => {
@@ -145,6 +259,9 @@ function CreateProjectWizard({ userName, userEmail, userPhone, supervisors = [],
           ...formData.TestsInfo,
           testRows: testRows
         },
+        // Add charging code info from the Tests tab textarea
+        chargingCodeComment: formData.TestsInfo?.chargingCodeComment || "",
+        chargingProjectID: derivedChargingProjectId,
         // Add the userName to be stored as CreatedBy
         userName: userName
       };
@@ -155,6 +272,9 @@ function CreateProjectWizard({ userName, userEmail, userPhone, supervisors = [],
       const response = await axios.post('/api/projects/wizard', submitData);
       console.log('Form submitted successfully', response.data);
       setSubmitSuccess(true);
+      
+      // Clear the draft from localStorage after successful submission
+      localStorage.removeItem('projectWizardDraft');
       
       // Navigate back to dashboard
       setTimeout(() => {
@@ -174,19 +294,36 @@ function CreateProjectWizard({ userName, userEmail, userPhone, supervisors = [],
   };
 
   return (
-    <div className="container py-4">
-      <div className="d-flex gap-2 mb-4 justify-content-center">
-        {sections.map((s, idx) => (
-          <button
-            key={s.label}
-            className={`btn btn-outline-primary${activeSection === idx ? " active" : ""}`}
-            onClick={() => handleSectionChange(idx)}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
-      <div className="card shadow p-4">
+    <div className="container-fluid py-4">
+      <div className="row">
+        {/* Left Sidebar Navigation */}
+        <div className="col-md-3 col-lg-2">
+          <div className="card shadow-sm position-sticky" style={{ top: '110px' }}>
+            <div className="card-body p-0">
+              <div className="list-group list-group-flush">
+                {sections.map((s, idx) => (
+                  <button
+                    key={s.label}
+                    className={`list-group-item list-group-item-action border-0 ${activeSection === idx ? "active" : ""}`}
+                    onClick={() => handleSectionChange(idx)}
+                  >
+                    <i className={`bi ${
+                      idx === 0 ? 'bi-info-circle' :
+                      idx === 1 ? 'bi-geo-alt' :
+                      idx === 2 ? 'bi-box' :
+                      'bi-clipboard-check'
+                    } me-2`}></i>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Main Content Area */}
+        <div className="col-md-9 col-lg-10">
+          <div className="card shadow p-4">
         {activeSection === 0 && (
           <>
             <ProjectInfo
@@ -259,7 +396,9 @@ function CreateProjectWizard({ userName, userEmail, userPhone, supervisors = [],
                   ...formData.ProjectInfo,
                   requesterName: formData.RequesterInfo?.requesterName || userName
                 },
-                boreholes: formData.Boreholes?.boreholes || []
+                boreholes: formData.Boreholes?.boreholes || [],
+                chargingCodeComment: formData.TestsInfo?.chargingCodeComment || "",
+                testOptions: testTypeOptions
               }}
               onChange={data => {
                 // Check if the data contains navigation flags
@@ -281,6 +420,111 @@ function CreateProjectWizard({ userName, userEmail, userPhone, supervisors = [],
                 }
               }}
             />
+            {(formData.ProjectInfo?.structures && formData.ProjectInfo.structures.length > 0) && (
+              <div className="mt-4">
+                <h5 className="fw-semibold mb-3">Charging Code</h5>
+                <div className="row g-3">
+                  <div className="col-md-3">
+                    <label htmlFor="chargingProjectID" className="form-label">Project ID</label>
+                    <input
+                      type="text"
+                      id="chargingProjectID"
+                      className="form-control"
+                      placeholder="Enter Project ID"
+                      value={derivedChargingProjectId}
+                      onChange={e => setFormData(prev => ({
+                        ...prev,
+                        TestsInfo: { ...prev.TestsInfo, chargingProjectID: e.target.value }
+                      }))}
+                    />
+                  </div>
+                  <div className="col-md-3">
+                    <label htmlFor="chargingUnit" className="form-label">Unit</label>
+                    <input
+                      type="text"
+                      id="chargingUnit"
+                      className="form-control"
+                      placeholder="Enter Unit"
+                      value={formData.TestsInfo?.chargingUnit || ""}
+                      onChange={e => setFormData(prev => ({
+                        ...prev,
+                        TestsInfo: { ...prev.TestsInfo, chargingUnit: e.target.value }
+                      }))}
+                    />
+                  </div>
+                  <div className="col-md-3">
+                    <label htmlFor="chargingReportingCode" className="form-label">Reporting Code</label>
+                    <input
+                      type="text"
+                      id="chargingReportingCode"
+                      className="form-control"
+                      placeholder="Enter Reporting Code"
+                      value={formData.TestsInfo?.chargingReportingCode || ""}
+                      onChange={e => setFormData(prev => ({
+                        ...prev,
+                        TestsInfo: { ...prev.TestsInfo, chargingReportingCode: e.target.value }
+                      }))}
+                    />
+                  </div>
+                  <div className="col-md-3">
+                    <label htmlFor="chargingPhase" className="form-label">Phase</label>
+                    <input
+                      type="text"
+                      id="chargingPhase"
+                      className="form-control"
+                      placeholder="Enter Phase"
+                      value={formData.TestsInfo?.chargingPhase || ""}
+                      onChange={e => setFormData(prev => ({
+                        ...prev,
+                        TestsInfo: { ...prev.TestsInfo, chargingPhase: e.target.value }
+                      }))}
+                    />
+                  </div>
+                  <div className="col-md-3">
+                    <label htmlFor="chargingSubObject" className="form-label">Sub Object</label>
+                    <input
+                      type="text"
+                      id="chargingSubObject"
+                      className="form-control"
+                      placeholder="Enter Sub Object"
+                      value={formData.TestsInfo?.chargingSubObject || ""}
+                      onChange={e => setFormData(prev => ({
+                        ...prev,
+                        TestsInfo: { ...prev.TestsInfo, chargingSubObject: e.target.value }
+                      }))}
+                    />
+                  </div>
+                  <div className="col-md-3">
+                    <label htmlFor="chargingActivity" className="form-label">Activity</label>
+                    <input
+                      type="text"
+                      id="chargingActivity"
+                      className="form-control"
+                      placeholder="Enter Activity"
+                      value={formData.TestsInfo?.chargingActivity || ""}
+                      onChange={e => setFormData(prev => ({
+                        ...prev,
+                        TestsInfo: { ...prev.TestsInfo, chargingActivity: e.target.value }
+                      }))}
+                    />
+                  </div>
+                  <div className="col-md-3">
+                    <label htmlFor="chargingSubActivity" className="form-label">Sub Activity</label>
+                    <input
+                      type="text"
+                      id="chargingSubActivity"
+                      className="form-control"
+                      placeholder="Enter Sub Activity"
+                      value={formData.TestsInfo?.chargingSubActivity || ""}
+                      onChange={e => setFormData(prev => ({
+                        ...prev,
+                        TestsInfo: { ...prev.TestsInfo, chargingSubActivity: e.target.value }
+                      }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="d-flex justify-content-center mt-4">
               <button 
                 type="submit" 
@@ -303,6 +547,8 @@ function CreateProjectWizard({ userName, userEmail, userPhone, supervisors = [],
             )}
           </form>
         )}
+          </div>
+        </div>
       </div>
     </div>
   );

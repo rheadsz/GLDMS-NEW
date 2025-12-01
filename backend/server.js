@@ -92,7 +92,7 @@ app.use("/api/visiondb", visiondbRoutes);
 const pdfRoutes = require("./routes/pdf");
 app.use("/api/pdf", pdfRoutes);
 
-// ✅ Assignments router (relies on req.session.* for user stamping)
+// Assignments router (relies on req.session.* for user stamping)
 const assignmentsRouter = require("./routes/assignments")(db);
 app.use("/api", assignmentsRouter);
 
@@ -165,7 +165,7 @@ app.post("/api/login", (req, res) => {
     const user = results[0];
     console.log("Login successful, userType:", user.UserType);
 
-    // ✅ Persist login in a session cookie so other routes can read the user
+    // Persist login in a session cookie so other routes can read the user
     req.session.userId = user.UserID;
     req.session.userName = user.UserName;
     req.session.userType = user.UserType;

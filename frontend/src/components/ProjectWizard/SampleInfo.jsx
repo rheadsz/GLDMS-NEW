@@ -1,8 +1,68 @@
 import React, { useState, useEffect } from "react";
 import axios from 'axios';
 
+const SOIL_BAG_SIZE_OPTIONS = [
+  '25% of 1 gallon bag',
+  '50% of 1 gallon bag',
+  '75% of 1 gallon bag',
+  'Full 1 gallon bag'
+];
+
+const SOIL_TUBE_SIZE_OPTIONS = [
+  '1.944 inch',
+  '2.375 inch',
+  '2.875 inch'
+];
+
+const MANUAL_OPTION_VALUE = 'manual';
+
+const normalizeSample = (sample = {}) => {
+  const sampleType = sample.sampleType === 'Rock' ? 'Rock' : 'Soil';
+  let containerType = sample.containerType || '';
+  if (containerType === 'Jar') {
+    containerType = 'Bag';
+  }
+
+  const containerSizeOption = sample.containerSizeOption || '';
+  const containerSizeManual = sample.containerSizeManual || '';
+
+  let containerSize = sample.containerSize || '';
+  if (!containerSize) {
+    if (containerSizeOption && containerSizeOption !== MANUAL_OPTION_VALUE) {
+      containerSize = containerSizeOption;
+    } else if (containerSizeOption === MANUAL_OPTION_VALUE) {
+      containerSize = containerSizeManual;
+    }
+  }
+
+  return {
+    ...sample,
+    sampleType,
+    containerType,
+    containerSizeOption,
+    containerSizeManual,
+    containerSize
+  };
+};
+
+const createBlankSample = (overrides = {}) => normalizeSample({
+  id: Date.now().toString(),
+  sampleId: '',
+  boreholeId: '',
+  depthFrom: '',
+  depthTo: '',
+  tl101No: '',
+  containerType: '',
+  containerSizeOption: '',
+  containerSizeManual: '',
+  containerSize: '',
+  quantity: '',
+  fieldCollectionDate: '',
+  ...overrides
+});
+
 function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSample, index = 0 }) {
-  const [samples, setSamples] = useState(data?.samples || []);
+  const [samples, setSamples] = useState(() => (data?.samples || []).map(normalizeSample));
   // Track the currently selected borehole
   const [selectedBoreholeId, setSelectedBoreholeId] = useState(boreholes.length > 0 ? boreholes[0].boreholeId : null);
   // Track the currently selected sample ID
@@ -40,16 +100,10 @@ function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSampl
   // create a default sample for each borehole
   useEffect(() => {
     if (samples.length === 0 && boreholes.length > 0) {
-      const initialSamples = boreholes.map(borehole => ({
-        id: Date.now().toString() + '-' + borehole.id,
-        sampleId: '',
+      const initialSamples = boreholes.map(borehole => createBlankSample({
+        id: `${Date.now().toString()}-${borehole.id}`,
         boreholeId: borehole.boreholeId,
-        depthFrom: '',
-        depthTo: '',
-        tl101No: '',
-        containerType: 'Tube',
-        quantity: '',
-        fieldCollectionDate: ''
+        containerType: 'Tube'
       }));
       setSamples(initialSamples);
       onChange({ ...data, samples: initialSamples });
@@ -79,17 +133,11 @@ function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSampl
   }, [selectedBoreholeId]); // Only run when borehole changes, not when samples change
 
   const handleAddAnotherSample = (boreholeId) => {
-    const newSample = {
+    const newSample = createBlankSample({
       id: Date.now().toString(),
-      sampleId: '',
-      boreholeId: boreholeId,  // Pre-assign to the correct borehole
-      depthFrom: '',
-      depthTo: '',
-      tl101No: '',
-      containerType: 'Tube',
-      quantity: '',
-      fieldCollectionDate: ''
-    };
+      boreholeId: boreholeId,
+      containerType: 'Tube'
+    });
     
     const updatedSamples = [...samples, newSample];
     setSamples(updatedSamples);
@@ -117,7 +165,7 @@ function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSampl
   const handleSampleChange = (sampleId, field, value) => {
     const updatedSamples = samples.map(sample => {
       if (sample.id === sampleId) {
-        return { ...sample, [field]: value };
+        return normalizeSample({ ...sample, [field]: value });
       }
       return sample;
     });
@@ -232,103 +280,265 @@ function SampleInfo({ data, boreholes = [], onChange, onAddSample, onDeleteSampl
                                 const sampleIndex = boreholeSamples.findIndex(s => s.id === selectedSampleId);
                                 
                                 return (
-                            <div key={sample.id} className="mb-4 pb-3" style={{ borderBottom: sampleIndex < boreholeSamples.length - 1 ? '1px dashed #dee2e6' : 'none' }}>
-                              <div className="d-flex justify-content-between align-items-center mb-3">
-                                <h6 className="mb-0">Sample {sampleIndex + 1}</h6>
-                                <button 
-                                  type="button" 
-                                  className="btn btn-outline-danger btn-sm"
-                                  onClick={() => handleDeleteSample(sample.id)}
-                                >
-                                  <i className="bi bi-trash"></i> Remove
-                                </button>
-                              </div>
-                              
-                              <div className="row mb-3">
-                                <div className="col-md-6">
-                                  <label className="form-label">Sample ID (No.):</label>
-                                  <input 
-                                    type="text" 
-                                    className="form-control form-control-sm" 
-                                    value={sample.sampleId || ''} 
-                                    onChange={(e) => handleSampleChange(sample.id, 'sampleId', e.target.value)}
-                                  />
-                                </div>
-                              </div>
-                              
-                              <div className="row mb-3">
-                                <div className="col-md-6">
-                                  <label className="form-label">Depth(ft): From/To</label>
-                                  <div className="d-flex gap-2">
-                                    <input 
-                                      type="text" 
-                                      className="form-control form-control-sm" 
-                                      placeholder="From" 
-                                      value={sample.depthFrom || ''} 
-                                      onChange={(e) => handleSampleChange(sample.id, 'depthFrom', e.target.value)}
-                                    />
-                                    <input 
-                                      type="text" 
-                                      className="form-control form-control-sm" 
-                                      placeholder="To" 
-                                      value={sample.depthTo || ''} 
-                                      onChange={(e) => handleSampleChange(sample.id, 'depthTo', e.target.value)}
-                                    />
+                                  <div
+                                    key={sample.id}
+                                    className="mb-4 pb-3"
+                                    style={{ borderBottom: sampleIndex < boreholeSamples.length - 1 ? '1px dashed #dee2e6' : 'none' }}
+                                  >
+                                    <div className="d-flex justify-content-between align-items-center mb-3">
+                                      <h6 className="mb-0">Sample {sampleIndex + 1}</h6>
+                                      <button
+                                        type="button"
+                                        className="btn btn-outline-danger btn-sm"
+                                        onClick={() => handleDeleteSample(sample.id)}
+                                      >
+                                        <i className="bi bi-trash"></i> Remove
+                                      </button>
+                                    </div>
+
+                                    <div className="row mb-3">
+                                      <div className="col-md-6">
+                                        <label className="form-label">Sample ID (No.):</label>
+                                        <input
+                                          type="text"
+                                          className="form-control form-control-sm"
+                                          value={sample.sampleId || ''}
+                                          onChange={(e) => handleSampleChange(sample.id, 'sampleId', e.target.value)}
+                                        />
+                                      </div>
+                                      <div className="col-md-6">
+                                        <label className="form-label d-block">Sample Type</label>
+                                        <div className="d-flex align-items-center gap-3">
+                                          <div className="form-check">
+                                            <input
+                                              className="form-check-input"
+                                              type="radio"
+                                              name={`sampleType-${sample.id}`}
+                                              id={`sampleType-soil-${sample.id}`}
+                                              value="Soil"
+                                              checked={sample.sampleType === 'Soil'}
+                                              onChange={() => handleSampleChange(sample.id, 'sampleType', 'Soil')}
+                                            />
+                                            <label className="form-check-label" htmlFor={`sampleType-soil-${sample.id}`}>
+                                              Soil
+                                            </label>
+                                          </div>
+                                          <div className="form-check">
+                                            <input
+                                              className="form-check-input"
+                                              type="radio"
+                                              name={`sampleType-${sample.id}`}
+                                              id={`sampleType-rock-${sample.id}`}
+                                              value="Rock"
+                                              checked={sample.sampleType === 'Rock'}
+                                              onChange={() => handleSampleChange(sample.id, 'sampleType', 'Rock')}
+                                            />
+                                            <label className="form-check-label" htmlFor={`sampleType-rock-${sample.id}`}>
+                                              Rock
+                                            </label>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {sample.sampleType === 'Soil' && (
+                                      <>
+                                        <div className="row mb-3">
+                                          <div className="col-md-6">
+                                            <label className="form-label d-block">Container Type</label>
+                                            <div className="form-check form-check-inline">
+                                              <input
+                                                className="form-check-input"
+                                                type="radio"
+                                                name={`containerType-${sample.id}`}
+                                                id={`container-bag-${sample.id}`}
+                                                value="Bag"
+                                                checked={sample.containerType === 'Bag'}
+                                                onChange={() => handleSampleChange(sample.id, 'containerType', 'Bag')}
+                                              />
+                                              <label className="form-check-label" htmlFor={`container-bag-${sample.id}`}>
+                                                Bag
+                                              </label>
+                                            </div>
+                                            <div className="form-check form-check-inline">
+                                              <input
+                                                className="form-check-input"
+                                                type="radio"
+                                                name={`containerType-${sample.id}`}
+                                                id={`container-tube-${sample.id}`}
+                                                value="Tube"
+                                                checked={sample.containerType === 'Tube'}
+                                                onChange={() => handleSampleChange(sample.id, 'containerType', 'Tube')}
+                                              />
+                                              <label className="form-check-label" htmlFor={`container-tube-${sample.id}`}>
+                                                Tube
+                                              </label>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {sample.containerType === 'Bag' && (
+                                          <div className="row mb-3">
+                                            <div className="col-md-6">
+                                              <label className="form-label">Bag Size</label>
+                                              <select
+                                                className="form-select form-select-sm"
+                                                value={sample.containerSizeOption || ''}
+                                                onChange={(e) => handleSampleChange(sample.id, 'containerSizeOption', e.target.value)}
+                                              >
+                                                <option value="">Select bag size</option>
+                                                {SOIL_BAG_SIZE_OPTIONS.map((option) => (
+                                                  <option key={option} value={option}>
+                                                    {option}
+                                                  </option>
+                                                ))}
+                                                <option value={MANUAL_OPTION_VALUE}>Enter manually</option>
+                                              </select>
+                                            </div>
+                                            {sample.containerSizeOption === MANUAL_OPTION_VALUE && (
+                                              <div className="col-md-6">
+                                                <label className="form-label">Custom Size</label>
+                                                <input
+                                                  type="text"
+                                                  className="form-control form-control-sm"
+                                                  placeholder="Enter bag size"
+                                                  value={sample.containerSizeManual || ''}
+                                                  onChange={(e) => handleSampleChange(sample.id, 'containerSizeManual', e.target.value)}
+                                                />
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+
+                                        {sample.containerType === 'Tube' && (
+                                          <div className="row mb-3">
+                                            <div className="col-md-6">
+                                              <label className="form-label">Tube Size</label>
+                                              <select
+                                                className="form-select form-select-sm"
+                                                value={sample.containerSizeOption || ''}
+                                                onChange={(e) => handleSampleChange(sample.id, 'containerSizeOption', e.target.value)}
+                                              >
+                                                <option value="">Select tube size</option>
+                                                {SOIL_TUBE_SIZE_OPTIONS.map((option) => (
+                                                  <option key={option} value={option}>
+                                                    {option}
+                                                  </option>
+                                                ))}
+                                                <option value={MANUAL_OPTION_VALUE}>Enter manually</option>
+                                              </select>
+                                            </div>
+                                            {sample.containerSizeOption === MANUAL_OPTION_VALUE && (
+                                              <div className="col-md-6">
+                                                <label className="form-label">Custom Size</label>
+                                                <input
+                                                  type="text"
+                                                  className="form-control form-control-sm"
+                                                  placeholder="Enter tube size"
+                                                  value={sample.containerSizeManual || ''}
+                                                  onChange={(e) => handleSampleChange(sample.id, 'containerSizeManual', e.target.value)}
+                                                />
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+
+                                        <div className="row mb-3">
+                                          <div className="col-md-6">
+                                            <label className="form-label">Top Depth (ft)</label>
+                                            <input
+                                              type="text"
+                                              className="form-control form-control-sm"
+                                              value={sample.depthFrom || ''}
+                                              onChange={(e) => handleSampleChange(sample.id, 'depthFrom', e.target.value)}
+                                            />
+                                          </div>
+                                          <div className="col-md-6">
+                                            <label className="form-label">Bottom Depth (ft)</label>
+                                            <input
+                                              type="text"
+                                              className="form-control form-control-sm"
+                                              value={sample.depthTo || ''}
+                                              onChange={(e) => handleSampleChange(sample.id, 'depthTo', e.target.value)}
+                                            />
+                                          </div>
+                                        </div>
+                                      </>
+                                    )}
+
+                                    {sample.sampleType === 'Rock' && (
+                                      <>
+                                        <div className="row mb-3">
+                                          <div className="col-md-6">
+                                            <label className="form-label d-block">Container Type</label>
+                                            <div className="form-check form-check-inline">
+                                              <input
+                                                className="form-check-input"
+                                                type="radio"
+                                                name={`containerType-${sample.id}`}
+                                                id={`rock-container-bag-${sample.id}`}
+                                                value="Bag"
+                                                checked={sample.containerType === 'Bag'}
+                                                onChange={() => handleSampleChange(sample.id, 'containerType', 'Bag')}
+                                              />
+                                              <label className="form-check-label" htmlFor={`rock-container-bag-${sample.id}`}>
+                                                Bag
+                                              </label>
+                                            </div>
+                                            <div className="form-check form-check-inline">
+                                              <input
+                                                className="form-check-input"
+                                                type="radio"
+                                                name={`containerType-${sample.id}`}
+                                                id={`rock-container-core-${sample.id}`}
+                                                value="Core"
+                                                checked={sample.containerType === 'Core'}
+                                                onChange={() => handleSampleChange(sample.id, 'containerType', 'Core')}
+                                              />
+                                              <label className="form-check-label" htmlFor={`rock-container-core-${sample.id}`}>
+                                                Core
+                                              </label>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {sample.containerType && (
+                                          <div className="row mb-3">
+                                            <div className="col-md-6">
+                                              <label className="form-label">Top Depth (ft)</label>
+                                              <input
+                                                type="text"
+                                                className="form-control form-control-sm"
+                                                value={sample.depthFrom || ''}
+                                                onChange={(e) => handleSampleChange(sample.id, 'depthFrom', e.target.value)}
+                                              />
+                                            </div>
+                                            <div className="col-md-6">
+                                              <label className="form-label">Bottom Depth (ft)</label>
+                                              <input
+                                                type="text"
+                                                className="form-control form-control-sm"
+                                                value={sample.depthTo || ''}
+                                                onChange={(e) => handleSampleChange(sample.id, 'depthTo', e.target.value)}
+                                              />
+                                            </div>
+                                          </div>
+                                        )}
+                                      </>
+                                    )}
+
+                                    <div className="row mb-3">
+                                      <div className="col-md-6">
+                                        <label className="form-label">Sample Field Collection</label>
+                                        <input
+                                          type="date"
+                                          className="form-control form-control-sm"
+                                          value={sample.fieldCollectionDate || ''}
+                                          onChange={(e) => handleSampleChange(sample.id, 'fieldCollectionDate', e.target.value)}
+                                        />
+                                      </div>
+                                    </div>
                                   </div>
-                                </div>
-                              </div>
-                              
-                              <div className="row mb-3">
-                                <div className="col-md-6">
-                                  <label className="form-label d-block">Tube/jar:</label>
-                                  <div className="form-check form-check-inline">
-                                    <input 
-                                      className="form-check-input" 
-                                      type="radio" 
-                                      name={`containerType-${sample.id}`} 
-                                      id={`tube-${sample.id}`} 
-                                      value="Tube" 
-                                      checked={sample.containerType === "Tube"} 
-                                      onChange={() => handleSampleChange(sample.id, "containerType", "Tube")} 
-                                    />
-                                    <label className="form-check-label" htmlFor={`tube-${sample.id}`}>Tube</label>
-                                  </div>
-                                  <div className="form-check form-check-inline">
-                                    <input 
-                                      className="form-check-input" 
-                                      type="radio" 
-                                      name={`containerType-${sample.id}`} 
-                                      id={`jar-${sample.id}`} 
-                                      value="Jar" 
-                                      checked={sample.containerType === "Jar"} 
-                                      onChange={() => handleSampleChange(sample.id, "containerType", "Jar")} 
-                                    />
-                                    <label className="form-check-label" htmlFor={`jar-${sample.id}`}>Jar</label>
-                                  </div>
-                                </div>
-                                <div className="col-md-6">
-                                  <label className="form-label">Quantity(Repetition):</label>
-                                  <input 
-                                    type="text" 
-                                    className="form-control form-control-sm" 
-                                    value={sample.quantity || ''} 
-                                    onChange={(e) => handleSampleChange(sample.id, 'quantity', e.target.value)}
-                                  />
-                                </div>
-                              </div>
-                              
-                              <div className="row mb-3">
-                                <div className="col-md-6">
-                                  <label className="form-label">Sample Field Collection:</label>
-                                  <input 
-                                    type="date" 
-                                    className="form-control form-control-sm" 
-                                    value={sample.fieldCollectionDate || ''} 
-                                    onChange={(e) => handleSampleChange(sample.id, 'fieldCollectionDate', e.target.value)}
-                                  />
-                                </div>
-                              </div>
-                            </div>
                                 );
                               })()}
                             </div>

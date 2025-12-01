@@ -12,13 +12,16 @@ function ProjectInfo({ data, onChange }) {
   const searchTimeoutRef = useRef(null);
 
   // Function to fetch project data from visiondb
-  const fetchProjectData = useCallback(async (projectId) => {
-    if (!projectId || projectId.trim() === '') return;
-    
+  const fetchProjectData = useCallback(async (projectIdRaw) => {
+    const projectId = projectIdRaw?.trim();
+    if (!projectId) {
+      return;
+    }
+
     setError(null);
-    
+
     try {
-      const response = await axios.get(`/api/visiondb/project/${projectId}`);
+      const response = await axios.get(`/api/visiondb/project/${encodeURIComponent(projectId)}`);
       
       if (response.data) {
         console.log('Received project data:', response.data);
@@ -43,9 +46,10 @@ function ProjectInfo({ data, onChange }) {
       }
     } catch (err) {
       console.error('Error fetching project data:', err);
-      setError('Failed to fetch project data. Please check the Project ID.');
+      const message = err.response?.data?.message || 'Failed to fetch project data. Please check the Project ID.';
+      setError(message);
     }
-  }, [onChange]);
+  }, [data, onChange]);
 
   // Function to search for project IDs
   const searchProjectIds = useCallback(async (searchTerm) => {
@@ -78,12 +82,12 @@ function ProjectInfo({ data, onChange }) {
   // Effect to fetch data when projectID changes
   useEffect(() => {
     // Only fetch data when projectID is not empty and has changed
-    if (data.projectID && data.projectID.trim() !== '' && 
-        data.projectID !== prevProjectIdRef.current) {
+    const normalizedId = data.projectID?.trim();
+    if (normalizedId && normalizedId !== prevProjectIdRef.current) {
       // Update the ref with current projectID
-      prevProjectIdRef.current = data.projectID;
+      prevProjectIdRef.current = normalizedId;
       // Fetch data for the new projectID
-      fetchProjectData(data.projectID);
+      fetchProjectData(normalizedId);
     }
   }, [data.projectID, fetchProjectData]);
 
@@ -102,7 +106,8 @@ function ProjectInfo({ data, onChange }) {
 
   // Handle project ID input change with debounce
   const handleProjectIdChange = (value) => {
-    onChange({ ...data, projectID: value });
+    const normalizedValue = value.toString().trimStart();
+    onChange({ ...data, projectID: normalizedValue });
     
     // Clear existing timeout
     if (searchTimeoutRef.current) {
@@ -117,10 +122,11 @@ function ProjectInfo({ data, onChange }) {
 
   // Handle selecting a suggestion
   const handleSelectSuggestion = (projectId) => {
-    onChange({ ...data, projectID: projectId });
+    const normalized = projectId.trim();
+    onChange({ ...data, projectID: normalized });
     setShowSuggestions(false);
     setProjectSuggestions([]);
-    fetchProjectData(projectId);
+    fetchProjectData(normalized);
   };
 
   return (

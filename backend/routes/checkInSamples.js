@@ -100,5 +100,57 @@ module.exports = (db) => {
     });
   });
 
+  // POST /api/checkin/sample-status
+  // Body: { SampleID, Action }
+  // Saves the normalized action label into project_samples.ActionStatus
+  router.post("/checkin/sample-status", (req, res) => {
+    const { SampleID, Action } = req.body || {};
+    if (!SampleID) {
+      return res.status(400).json({ error: "SampleID is required." });
+    }
+
+    if (!Action) {
+      return res.status(400).json({ error: "Action is required." });
+    }
+
+    // Normalize a few common labels but otherwise store what we receive
+    const label = String(Action).toLowerCase();
+    let actionStatus;
+    if (label.includes("checked")) {
+      // Store exactly "Checked in" for checked-in samples
+      actionStatus = "Checked in";
+    } else if (label.includes("reject")) {
+      actionStatus = "Rejected";
+    } else if (label.includes("not")) {
+      actionStatus = "Not Received";
+    } else {
+      actionStatus = Action;
+    }
+
+    const sql = `
+      UPDATE project_samples
+      SET ActionStatus = ?
+      WHERE SampleID = ?;
+    `;
+
+    db.query(sql, [actionStatus, SampleID], (err, result) => {
+      if (err) {
+        console.error("[ERR] POST /api/checkin/sample-status:", err.message);
+        return res
+          .status(500)
+          .json({ error: "Failed to update ActionStatus." });
+      }
+
+      console.log(
+        `[RES] POST /api/checkin/sample-status SampleID=${SampleID} -> ${actionStatus}`
+      );
+      return res.json({
+        ok: true,
+        affectedRows: result.affectedRows,
+        actionStatus,
+      });
+    });
+  });
+
   return router;
 };

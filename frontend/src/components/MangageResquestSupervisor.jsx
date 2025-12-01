@@ -322,10 +322,11 @@ function AppWithSidebar() {
                     onChange={(e) => setReqStatusFilter(e.target.value)}
                   >
                     <option value="All">All</option>
-                    <option value="Submitted">Submitted</option>
-                    <option value="Assigned">Assigned</option>
+                    {/* Map new labels to existing backend status values */}
+                    <option value="Submitted">Requested</option>
+                    <option value="Assigned">Checked in</option>
                     <option value="In Progress">In Progress</option>
-                    <option value="Completed">Completed</option>
+                    <option value="Completed">Complete</option>
                     <option value="Rejected">Rejected</option>
                   </select>
                 </div>

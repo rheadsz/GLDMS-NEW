@@ -718,7 +718,6 @@ function AssignmentDetails({
             </th>
             <th>Requested Test</th>
             <th>Sample (Borehole ID-Depth)</th>
-            <th>Request Submission Date</th>
             <th>Tester</th>
             <th>Due</th>
             <th>Status</th>
@@ -728,13 +727,13 @@ function AssignmentDetails({
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={8} className="text-center">
+              <td colSpan={7} className="text-center">
                 Loading…
               </td>
             </tr>
           ) : rows.length === 0 ? (
             <tr>
-              <td colSpan={8} className="text-center">
+              <td colSpan={7} className="text-center">
                 No items.
               </td>
             </tr>
@@ -799,7 +798,6 @@ function AssignmentDetails({
                     )}
                     {r.BoreholeDepth ?? "—"}
                   </td>
-                  <td>{formatDateOnly(r.RequestSubmissionDate)}</td>
                   <td>
                     {isEditing && !isRejected ? (
                       <select

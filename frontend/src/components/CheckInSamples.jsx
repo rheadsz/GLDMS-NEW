@@ -11,13 +11,14 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
   const [refreshTick, setRefreshTick] = useState(0);
   const [actionSavingId, setActionSavingId] = useState(null);
   const [actionMsg, setActionMsg] = useState("");
+  const [actionEditable, setActionEditable] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setErr(null);
     setRows([]);
-    setActive(null);
+    // keep current active selection when refreshing so status persists
 
     async function load() {
       try {
@@ -45,7 +46,8 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
   const groupedByRequest = useMemo(() => {
     const map = new Map();
     for (const r of rows) {
-      const key = r.RequestID;
+      const key = r.RequestID ?? r.RequestId;
+      if (!key) continue;
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(r);
     }
@@ -54,7 +56,15 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
 
   const requestSummaries = useMemo(() => {
     const arr = [];
-    for (const [, list] of groupedByRequest) arr.push(list[0]);
+    for (const [requestKey, list] of groupedByRequest) {
+      if (!list || list.length === 0) continue;
+      // Store back the numeric RequestID if present, otherwise the key
+      const first = list[0];
+      arr.push({
+        ...first,
+        RequestID: first.RequestID ?? first.RequestId ?? requestKey,
+      });
+    }
     return arr.sort((a, b) => (b.RequestID ?? 0) - (a.RequestID ?? 0));
   }, [groupedByRequest]);
 
@@ -79,26 +89,42 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
   const normalizeAction = (label) => {
     if (!label) return null;
     const s = String(label).toLowerCase();
-    if (s.includes("checked")) return "Accepted";
+    if (s.includes("checked")) return "Checked in";
     if (s.includes("reject")) return "Rejected";
     if (s.includes("not")) return "Not Received";
     return label;
   };
 
-  const updateRequestAction = async (reqId, label) => {
+  // Save sample-level action to backend (project_samples.ActionStatus)
+  const updateSampleAction = async (sampleId, label) => {
     const action = normalizeAction(label);
     if (!action) return;
-    setActionSavingId(reqId);
+    setActionSavingId(sampleId);
     setActionMsg("");
     try {
-      const r = await fetch("/api/supervisor/requests/update-status", {
+      const r = await fetch("/api/checkin/sample-status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ RequestID: reqId, Action: action }),
+        body: JSON.stringify({ SampleID: sampleId, Action: action }),
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
-      setActionMsg(`Request ${reqId} set to ${action}.`);
+
+      // optionally reflect the new ActionStatus in local state
+      setRows((prev) =>
+        prev.map((row) =>
+          row.SampleID === sampleId
+            ? { ...row, ActionStatus: data.actionStatus ?? action }
+            : row
+        )
+      );
+      if (active && active.SampleID === sampleId) {
+        setActive((prev) =>
+          prev ? { ...prev, ActionStatus: data.actionStatus ?? action } : prev
+        );
+      }
+
+      setActionMsg(`Sample ${sampleId} set to ${action}.`);
     } catch (e) {
       setActionMsg(e.message || "Update failed.");
     } finally {
@@ -110,7 +136,9 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
     <div className="lm-main d-flex">
       <style>{`
         .lm-sidebar {
-          width: ${sidebarOpen ? `${SIDEBAR_OPEN_PX}px` : `${SIDEBAR_CLOSED_PX}px`};
+          width: ${
+            sidebarOpen ? `${SIDEBAR_OPEN_PX}px` : `${SIDEBAR_CLOSED_PX}px`
+          };
           transition: width 240ms ease;
           overflow: hidden;
           border-right: 1px solid var(--bs-border-color, #dee2e6);
@@ -150,19 +178,26 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={3} className="text-center py-4">Loading…</td>
+                  <td colSpan={3} className="text-center py-4">
+                    Loading…
+                  </td>
                 </tr>
               ) : err ? (
                 <tr>
-                  <td colSpan={3} className="text-danger text-center py-4">{err}</td>
+                  <td colSpan={3} className="text-danger text-center py-4">
+                    {err}
+                  </td>
                 </tr>
               ) : requestSummaries.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="text-muted text-center py-4">No requests.</td>
+                  <td colSpan={3} className="text-muted text-center py-4">
+                    No requests.
+                  </td>
                 </tr>
               ) : (
                 requestSummaries.map((r) => {
-                  const isActive = (active?.RequestID ?? active?.id) === (r.RequestID ?? r.id);
+                  const isActive =
+                    (active?.RequestID ?? active?.id) === (r.RequestID ?? r.id);
                   return (
                     <tr
                       key={r.RequestID ?? `${r.EfisProjectID}-${r.CreatedBy}`}
@@ -178,8 +213,12 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                       }}
                       aria-selected={isActive}
                     >
-                      <td className="mono text-start"><span className="linklike">{r.RequestID ?? "—"}</span></td>
-                      <td className="mono text-start">{r.EfisProjectID ?? "—"}</td>
+                      <td className="mono text-start">
+                        <span className="linklike">{r.RequestID ?? "—"}</span>
+                      </td>
+                      <td className="mono text-start">
+                        {r.EfisProjectID ?? "—"}
+                      </td>
                       <td className="text-start">{r.CreatedBy ?? "—"}</td>
                     </tr>
                   );
@@ -191,8 +230,18 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
 
         <div className="debug-bar">
           endpoint: <code>/api/supervisor/request-samples</code>
-          {requestId ? <> | filter: <code>RequestID={String(requestId)}</code></> : null}
-          {actionMsg ? <> | <span className="text-muted">{actionMsg}</span></> : null}
+          {requestId ? (
+            <>
+              {" "}
+              | filter: <code>RequestID={String(requestId)}</code>
+            </>
+          ) : null}
+          {actionMsg ? (
+            <>
+              {" "}
+              | <span className="text-muted">{actionMsg}</span>
+            </>
+          ) : null}
         </div>
       </aside>
 
@@ -218,6 +267,7 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                 <table className="table table-bordered table-sm mb-0">
                   <thead className="table-light">
                     <tr>
+                      <th style={{ width: "32px" }}></th>
                       <th>Sample ID</th>
                       <th>Borehole ID</th>
                       <th>Depth From</th>
@@ -229,6 +279,15 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                   </thead>
                   <tbody>
                     <tr>
+                      <td className="text-center">
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          checked={actionEditable}
+                          disabled={actionSavingId === active.SampleID}
+                          onChange={(e) => setActionEditable(e.target.checked)}
+                        />
+                      </td>
                       <td>{active.SampleID ?? "—"}</td>
                       <td>{active.BoreholeID ?? "—"}</td>
                       <td>{active.DepthFrom ?? "—"}</td>
@@ -236,20 +295,37 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                       <td>{active.ContainerType ?? "—"}</td>
                       <td>{fmtDate(active.FieldCollectionDate)}</td>
                       <td>
-                        <select
-                          className="form-select form-select-sm"
-                          defaultValue=""
-                          onChange={(e) => {
-                            const label = e.target.value;
-                            if (!label) return;
-                            updateRequestAction(active.RequestID, label);
-                            e.target.value = "";
-                          }}
-                        >
-                          <option value="" disabled>— Select —</option>
-                          <option value="Checked-in">Checked in</option>
-                          <option value="Reject">Reject</option>
-                        </select>
+                        {actionEditable ? (
+                          <select
+                            className="form-select form-select-sm"
+                            defaultValue=""
+                            disabled={actionSavingId === active.SampleID}
+                            onChange={(e) => {
+                              const label = e.target.value;
+                              if (!label) return;
+                              updateSampleAction(active.SampleID, label);
+                              e.target.value = "";
+                              // After changing, make the cell read-only again
+                              setActionEditable(false);
+                            }}
+                          >
+                            <option value="" disabled>
+                              — Select —
+                            </option>
+                            <option value="Checked in">Checked in</option>
+                            <option value="Reject">Reject</option>
+                            <option value="Not Received">Not Received</option>
+                          </select>
+                        ) : (
+                          (() => {
+                            const latest = rows.find(
+                              (r) => r.SampleID === active.SampleID
+                            );
+                            const status =
+                              latest?.ActionStatus ?? active.ActionStatus;
+                            return <span>{status ?? "—"}</span>;
+                          })()
+                        )}
                       </td>
                     </tr>
                   </tbody>

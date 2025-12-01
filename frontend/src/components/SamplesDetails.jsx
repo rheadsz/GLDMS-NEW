@@ -414,7 +414,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
             </colgroup>
             <thead className="table-light sticky-top" style={{ top: 0 }}>
               <tr>
-                <th className="text-start">Sample ID</th>
+                <th className="text-start">Request No.</th>
                 <th className="text-start">Project ID</th>
                 <th className="text-start">Submitter</th>
               </tr>
@@ -472,7 +472,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                       aria-selected={isActive}
                     >
                       <td className="mono text-start">
-                        <span className="linklike">{s.SampleID ?? "—"}</span>
+                        <span className="linklike">{s.RequestID ?? "—"}</span>
                       </td>
                       <td className="mono text-start">
                         {s.EfisProjectID ?? "—"}

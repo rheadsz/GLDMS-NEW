@@ -29,7 +29,8 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
         const all = Array.isArray(items) ? items : [];
         const filtered = requestId
           ? all.filter(
-              (row) => String(row.RequestID ?? row.RequestId) === String(requestId)
+              (row) =>
+                String(row.RequestID ?? row.RequestId) === String(requestId)
             )
           : all;
         setRows(filtered);
@@ -133,11 +134,37 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
     }
   };
 
-  const currentActionStatus = (() => {
-    if (!active) return "";
-    const latest = rows.find((r) => r.SampleID === active.SampleID);
-    return latest?.ActionStatus ?? active.ActionStatus ?? "";
-  })();
+  // All samples for the currently active request (right-hand table)
+  const samplesForActiveRequest = useMemo(() => {
+    if (!active) return [];
+    const reqId = active.RequestID ?? active.RequestId;
+    if (!reqId) return [];
+    return rows.filter(
+      (r) => String(r.RequestID ?? r.RequestId) === String(reqId)
+    );
+  }, [rows, active]);
+
+  // Group samples for the selected request by BoreholeID for collapsible sections
+  const groupedByBorehole = useMemo(() => {
+    const map = new Map();
+    for (const s of samplesForActiveRequest) {
+      const key = s.BoreholeID ?? "(no borehole)";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(s);
+    }
+    return map;
+  }, [samplesForActiveRequest]);
+
+  const [openBoreholes, setOpenBoreholes] = useState({});
+
+  const toggleBorehole = (key) => {
+    setOpenBoreholes((prev) => ({
+      ...prev,
+      [key]: !(prev && Object.prototype.hasOwnProperty.call(prev, key)
+        ? prev[key]
+        : true),
+    }));
+  };
 
   const handleSelectRequest = (reqRow) => {
     setActive(reqRow);
@@ -209,8 +236,7 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
               ) : (
                 requestSummaries.map((r) => {
                   const isActive =
-                    (active?.RequestID ?? active?.id) ===
-                    (r.RequestID ?? r.id);
+                    (active?.RequestID ?? active?.id) === (r.RequestID ?? r.id);
                   return (
                     <tr
                       key={r.RequestID ?? `${r.EfisProjectID}-${r.CreatedBy}`}
@@ -258,7 +284,7 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
         </div>
       </aside>
 
-      {/* RIGHT: details with SampleID and Action column */}
+      {/* RIGHT: details with list of samples for the selected request */}
       <section className="lm-content">
         <div className="p-3 h-100 overflow-auto">
           {!active ? (
@@ -278,60 +304,109 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
 
               <div className="table-responsive">
                 <table className="table table-bordered table-sm mb-0">
-                  <thead className="table-light">
-                    <tr>
-                      <th style={{ width: "32px" }}></th>
-                      <th>Sample ID</th>
-                      <th>Borehole ID</th>
-                      <th>Depth From</th>
-                      <th>Depth To</th>
-                      <th>Container Type</th>
-                      <th>Field Collection Date</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
                   <tbody>
-                    <tr>
-                      <td className="text-center">
-                        <input
-                          type="checkbox"
-                          className="form-check-input"
-                          checked={actionEditable}
-                          disabled={actionSavingId === active.SampleID}
-                          onChange={(e) =>
-                            setActionEditable(e.target.checked)
-                          }
-                        />
-                      </td>
-                      <td>{active.SampleID ?? "—"}</td>
-                      <td>{active.BoreholeID ?? "—"}</td>
-                      <td>{active.DepthFrom ?? "—"}</td>
-                      <td>{active.DepthTo ?? "—"}</td>
-                      <td>{active.ContainerType ?? "—"}</td>
-                      <td>{fmtDate(active.FieldCollectionDate)}</td>
-                      <td>
-                        {actionEditable ? (
-                          <select
-                            className="form-select form-select-sm"
-                            value={currentActionStatus || ""}
-                            disabled={actionSavingId === active.SampleID}
-                            onChange={(e) => {
-                              const label = e.target.value;
-                              if (!label) return;
-                              updateSampleAction(active.SampleID, label);
-                              setActionEditable(false);
-                            }}
-                          >
-                            <option value="">— Select —</option>
-                            <option value="Checked in">Checked in</option>
-                            <option value="Rejected">Rejected</option>
-                            <option value="Not Received">Not Received</option>
-                          </select>
-                        ) : (
-                          <span>{currentActionStatus || "—"}</span>
-                        )}
-                      </td>
-                    </tr>
+                    {samplesForActiveRequest.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="text-center text-muted">
+                          No samples for this request.
+                        </td>
+                      </tr>
+                    ) : (
+                      Array.from(groupedByBorehole.entries()).map(
+                        ([boreholeId, list]) => {
+                          const key = String(boreholeId);
+                          const isOpen =
+                            openBoreholes &&
+                            Object.prototype.hasOwnProperty.call(
+                              openBoreholes,
+                              key
+                            )
+                              ? openBoreholes[key]
+                              : true;
+
+                          return (
+                            <React.Fragment key={key}>
+                              {/* Borehole header row */}
+                              <tr className="table-secondary">
+                                <td colSpan={7} style={{ cursor: "pointer" }}>
+                                  <span
+                                    onClick={() => toggleBorehole(key)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        toggleBorehole(key);
+                                      }
+                                    }}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-expanded={isOpen}
+                                  >
+                                    <span style={{ marginRight: 8 }}>
+                                      {isOpen ? "▾" : "▸"}
+                                    </span>
+                                    <strong>Borehole ID:</strong>{" "}
+                                    {boreholeId ?? "—"}
+                                  </span>
+                                </td>
+                              </tr>
+                              {/* Column labels row (per borehole group) */}
+                              {isOpen && (
+                                <tr className="table-light">
+                                  <th>Sample No.</th>
+                                  <th>Depth From</th>
+                                  <th>Depth To</th>
+                                  <th>Container Type</th>
+                                  <th>Field Collection Date</th>
+                                  <th>Action</th>
+                                  <th>Status</th>
+                                </tr>
+                              )}
+                              {/* Sample rows for this borehole */}
+                              {isOpen &&
+                                list.map((s) => (
+                                  <tr key={s.SampleID}>
+                                    <td>
+                                      {s.SampleNumber ?? s.SampleID ?? "—"}
+                                    </td>
+                                    <td>{s.DepthFrom ?? "—"}</td>
+                                    <td>{s.DepthTo ?? "—"}</td>
+                                    <td>{s.ContainerType ?? "—"}</td>
+                                    <td>{fmtDate(s.FieldCollectionDate)}</td>
+                                    <td>
+                                      <select
+                                        className="form-select form-select-sm"
+                                        value={s.ActionStatus ?? ""}
+                                        disabled={actionSavingId === s.SampleID}
+                                        onChange={(e) => {
+                                          const label = e.target.value;
+                                          updateSampleAction(s.SampleID, label);
+                                        }}
+                                      >
+                                        <option value="">— Select —</option>
+                                        <option value="Checked in">
+                                          Checked in
+                                        </option>
+                                        <option value="Rejected">
+                                          Rejected
+                                        </option>
+                                        <option value="Not Received">
+                                          Not Received
+                                        </option>
+                                      </select>
+                                    </td>
+                                    <td>
+                                      {s.ActionStatus &&
+                                      String(s.ActionStatus).trim() !== ""
+                                        ? s.ActionStatus
+                                        : "Shipped"}
+                                    </td>
+                                  </tr>
+                                ))}
+                            </React.Fragment>
+                          );
+                        }
+                      )
+                    )}
                   </tbody>
                 </table>
               </div>

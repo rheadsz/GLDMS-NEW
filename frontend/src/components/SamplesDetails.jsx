@@ -513,8 +513,10 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                   <span className="value mono">{active.RequestID ?? "—"}</span>
                 </div>
                 <div>
-                  <span className="label">Sample ID:</span>
-                  <span className="value mono">{active.SampleID ?? "—"}</span>
+                  <span className="label">Sample No.:</span>
+                  <span className="value mono">
+                    {active.SampleNumber ?? active.SampleID ?? "—"}
+                  </span>
                 </div>
                 <div>
                   <span className="label">Project ID:</span>
@@ -546,41 +548,13 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                     Edit
                   </button>
                 ) : (
-                  <>
-                    <button
-                      className="btn btn-sm btn-outline-secondary"
-                      onClick={cancelEdit}
-                      disabled={saving}
-                    >
-                      Cancel
-                    </button>
-                    <div className="ms-2 d-inline-flex gap-2">
-                      <button
-                        className="btn btn-sm btn-success"
-                        onClick={() => applyBulkAction("Accepted")}
-                        disabled={saving || selectedKeys.size === 0}
-                        title={
-                          selectedKeys.size === 0
-                            ? "Select tests to accept"
-                            : "Mark selected tests as Accepted"
-                        }
-                      >
-                        Accept
-                      </button>
-                      <button
-                        className="btn btn-sm btn-danger"
-                        onClick={() => applyBulkAction("Rejected")}
-                        disabled={saving || selectedKeys.size === 0}
-                        title={
-                          selectedKeys.size === 0
-                            ? "Select tests to reject"
-                            : "Mark selected tests as Rejected"
-                        }
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </>
+                  <button
+                    className="btn btn-sm btn-outline-secondary"
+                    onClick={cancelEdit}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </button>
                 )}
                 <button
                   className="btn btn-sm btn-outline-primary"

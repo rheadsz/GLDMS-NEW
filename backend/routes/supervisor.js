@@ -42,6 +42,7 @@ module.exports = (db) => {
     const sql = `
       SELECT
         ps.SampleID,
+        ps.SampleNumber,
         ps.RequestID                 AS RequestId,
         p.EfisProjectId              AS EfisProjectId,
         COALESCE(pr.RequestingUser, p.CreatedBy) AS CreatedBy,
@@ -76,6 +77,7 @@ module.exports = (db) => {
     const sql = `
       SELECT
         ps.SampleID,
+        ps.SampleNumber,
         ps.BoreholeID,
         ps.RequestID                 AS RequestId,      -- normalized camelCase
         p.EfisProjectId              AS EfisProjectId,

@@ -42,6 +42,7 @@ module.exports = (db) => {
     const sql = `
       SELECT
         ps.SampleID,
+        ps.SampleNumber,
         ps.BoreholeID,
         ps.DepthFrom,
         ps.DepthTo,

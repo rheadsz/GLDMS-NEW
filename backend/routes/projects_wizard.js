@@ -14,6 +14,7 @@ module.exports = (db) => {
     const Boreholes = req.body.Boreholes || {};
     const SampleInfoSets = req.body.SampleInfoSets || [];
     const TestsInfo = req.body.TestsInfo || {};
+    const chargingCodeComment = req.body.chargingCodeComment || "";
     
     // Define userName at the top level so it's accessible to all functions
     const userName = req.body.userName || 'System';
@@ -122,13 +123,13 @@ module.exports = (db) => {
               
               // Create a new request
               const requestQuery = `
-                INSERT INTO project_requests (ProjectID, Status, RequestingUser)
-                VALUES (?, 'Submitted', ?)
+                INSERT INTO project_requests (ProjectID, Status, RequestingUser, Notes)
+                VALUES (?, 'Submitted', ?, ?)
               `;
               
               db.query(
                 requestQuery,
-                [projectId, userName],
+                [projectId, userName, chargingCodeComment],
                 (err, requestResult) => {
                   if (err) {
                     console.error('Error creating request:', err);
@@ -409,18 +410,22 @@ module.exports = (db) => {
                             // Insert the sample
                             const sampleQuery = `
                               INSERT INTO project_samples (
-                                BoreholeID, SampleNumber, DepthFrom, DepthTo,
-                                TL101Number, ContainerType, Quantity, FieldCollectionDate, CreatedBy, RequestID
-                              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                BoreholeID, SampleNumber, SampleType, DepthFrom, DepthTo,
+                                TL101Number, ContainerType, ContainerSizeOption, ContainerSizeManual,
+                                Quantity, FieldCollectionDate, CreatedBy, RequestID
+                              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             `;
                             
                             const sampleParams = [
                               boreholeId,
                               sample.sampleId || '',
+                              sample.sampleType || null,
                               sample.depthFrom || null,
                               sample.depthTo || null,
                               sample.tl101No || null,
                               sample.containerType || 'Tube',
+                              sample.containerSizeOption || null,
+                              sample.containerSizeManual || null,
                               sample.quantity || null,
                               sample.fieldCollectionDate || null,
                               userName, // Use the already defined userName variable
@@ -617,11 +622,16 @@ module.exports = (db) => {
                   return resolveTestRow();
                 }
                 
+                console.log(`\n========================================`);
                 console.log(`Processing ${testRow.tests.length} tests for sample ID ${sampleId}`);
+                console.log(`Tests to insert:`, testRow.tests);
+                console.log(`========================================\n`);
                 
                 // Process each test in the row
                 const testPromises = testRow.tests.map(testName => {
                   return new Promise((resolveTest, rejectTest) => {
+                    console.log(`[TEST INSERT] Looking up test: "${testName}"`);
+                    
                     // Find the test type ID
                     const testTypeQuery = `
                       SELECT TestTypeID FROM test_type WHERE TestName = ?
@@ -632,17 +642,18 @@ module.exports = (db) => {
                       [testName],
                       (err, testTypeResult) => {
                         if (err) {
-                          console.error('Error finding test type:', err);
+                          console.error(`[TEST INSERT ERROR] Error finding test type for "${testName}":`, err);
                           return rejectTest(err);
                         }
                         
                         if (testTypeResult.length === 0) {
-                          console.warn(`Test type not found: ${testName}`);
+                          console.error(`[TEST INSERT FAILED] ❌ Test type not found in database: "${testName}"`);
+                          console.log(`[TEST INSERT FAILED] Skipping this test and continuing...`);
                           return resolveTest();
                         }
                         
                         const testTypeId = testTypeResult[0].TestTypeID;
-                        console.log(`Found test type ID ${testTypeId} for test ${testName}`);
+                        console.log(`[TEST INSERT] ✅ Found test type ID ${testTypeId} for test "${testName}"`);
                         
                         // Insert the test
                         const testQuery = `
@@ -660,17 +671,17 @@ module.exports = (db) => {
                           requestId
                         ];
                         
-                        console.log('Test insert parameters:', testParams);
+                        console.log(`[TEST INSERT] Inserting test "${testName}" with params:`, testParams);
                         
                         db.query(
                           testQuery,
                           testParams,
                           (err, testResult) => {
                             if (err) {
-                              console.error('Error inserting test:', err);
+                              console.error(`[TEST INSERT ERROR] ❌ Error inserting test "${testName}":`, err);
                               rejectTest(err);
                             } else {
-                              console.log(`Test created with ID: ${testResult.insertId}`);
+                              console.log(`[TEST INSERT SUCCESS] ✅ Test "${testName}" created with ID: ${testResult.insertId}\n`);
                               resolveTest(testResult);
                             }
                           }

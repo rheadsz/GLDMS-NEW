@@ -100,19 +100,31 @@ module.exports = (db) => {
       
       console.log(`[PROJECT DETAILS] Using database ProjectID: ${dbProjectId}`);
       
-      // Get structures for this project
-      const structuresQuery = `
-        SELECT 
-          s.StructureID,
-          s.StructureNumber,
-          s.ProjectComponent,
-          s.CreatedAt
-        FROM project_structures s
-        WHERE s.ProjectID = ?
-        ORDER BY s.StructureID
-      `;
+      // First, get the RequestID for this project (if it exists)
+      const requestQuery = `SELECT RequestID FROM project_requests WHERE ProjectID = ? ORDER BY RequestDate DESC LIMIT 1`;
       
-      db.query(structuresQuery, [dbProjectId], (err, structures) => {
+      db.query(requestQuery, [dbProjectId], (err, requestResults) => {
+        if (err) {
+          console.error("Error fetching request:", err);
+        }
+        
+        const requestId = requestResults && requestResults.length > 0 ? requestResults[0].RequestID : null;
+        console.log(`[PROJECT DETAILS] Found RequestID: ${requestId}`);
+        
+        // Get structures for this project (filter by RequestID if available)
+        const structuresQuery = requestId 
+          ? `SELECT s.StructureID, s.StructureNumber, s.ProjectComponent, s.CreatedAt
+             FROM project_structures s
+             WHERE s.ProjectID = ? AND s.RequestID = ?
+             ORDER BY s.StructureID`
+          : `SELECT s.StructureID, s.StructureNumber, s.ProjectComponent, s.CreatedAt
+             FROM project_structures s
+             WHERE s.ProjectID = ?
+             ORDER BY s.StructureID`;
+        
+        const structureParams = requestId ? [dbProjectId, requestId] : [dbProjectId];
+      
+      db.query(structuresQuery, structureParams, (err, structures) => {
         if (err) {
           console.error("Error fetching structures:", err);
           return res.status(500).json({ message: "Database error: " + err.message });
@@ -262,6 +274,7 @@ module.exports = (db) => {
           });
         });
       });
+      }); // Close requestQuery callback
     });
   });
 

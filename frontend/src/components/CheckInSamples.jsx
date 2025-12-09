@@ -11,7 +11,10 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
   const [refreshTick, setRefreshTick] = useState(0);
   const [actionSavingId, setActionSavingId] = useState(null);
   const [actionMsg, setActionMsg] = useState("");
-  const [actionEditable, setActionEditable] = useState(false);
+  // Per-sample flag: is this row's Action dropdown currently editable?
+  // Default is true (editable) until an action is chosen, then it becomes false
+  // and can be re-enabled via the checkbox in that row.
+  const [editableSamples, setEditableSamples] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -127,6 +130,11 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
       }
 
       setActionMsg(`Sample ${sampleId} set to ${action}.`);
+      // After a successful update, lock this row again (non-editable)
+      setEditableSamples((prev) => ({
+        ...prev,
+        [sampleId]: false,
+      }));
     } catch (e) {
       setActionMsg(e.message || "Update failed.");
     } finally {
@@ -168,7 +176,7 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
 
   const handleSelectRequest = (reqRow) => {
     setActive(reqRow);
-    setActionEditable(false);
+    // Do not reset editableSamples here; per-sample state persists across selection.
   };
 
   return (
@@ -352,6 +360,14 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                               {/* Column labels row (per borehole group) */}
                               {isOpen && (
                                 <tr className="table-light">
+                                  <th
+                                    style={{
+                                      width: "2.25rem",
+                                      textAlign: "center",
+                                    }}
+                                  >
+                                    {/* per-sample checkbox column */}
+                                  </th>
                                   <th>Sample No.</th>
                                   <th>Depth From</th>
                                   <th>Depth To</th>
@@ -365,6 +381,25 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                               {isOpen &&
                                 list.map((s) => (
                                   <tr key={s.SampleID}>
+                                    <td className="text-center">
+                                      <input
+                                        type="checkbox"
+                                        className="form-check-input"
+                                        checked={
+                                          editableSamples[s.SampleID] ?? true
+                                        }
+                                        onChange={() => {
+                                          setEditableSamples((prev) => {
+                                            const current =
+                                              prev[s.SampleID] ?? true;
+                                            return {
+                                              ...prev,
+                                              [s.SampleID]: !current,
+                                            };
+                                          });
+                                        }}
+                                      />
+                                    </td>
                                     <td>
                                       {s.SampleNumber ?? s.SampleID ?? "—"}
                                     </td>
@@ -376,7 +411,10 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                                       <select
                                         className="form-select form-select-sm"
                                         value={s.ActionStatus ?? ""}
-                                        disabled={actionSavingId === s.SampleID}
+                                        disabled={
+                                          actionSavingId === s.SampleID ||
+                                          !(editableSamples[s.SampleID] ?? true)
+                                        }
                                         onChange={(e) => {
                                           const label = e.target.value;
                                           updateSampleAction(s.SampleID, label);

@@ -42,10 +42,12 @@ module.exports = (db) => {
     const sql = `
       SELECT
         ps.SampleID,
+        ps.SampleNumber,
         ps.RequestID                 AS RequestId,
         p.EfisProjectId              AS EfisProjectId,
         COALESCE(pr.RequestingUser, p.CreatedBy) AS CreatedBy,
-        pr.Status                    AS Status
+        pr.Status                    AS Status,
+        ps.ActionStatus              AS ActionStatus
       FROM project_samples ps
       LEFT JOIN project_requests pr ON pr.RequestID = ps.RequestID
       LEFT JOIN project_boreholes pb ON pb.BoreholeID = ps.BoreholeID
@@ -75,11 +77,13 @@ module.exports = (db) => {
     const sql = `
       SELECT
         ps.SampleID,
+        ps.SampleNumber,
         ps.BoreholeID,
         ps.RequestID                 AS RequestId,      -- normalized camelCase
         p.EfisProjectId              AS EfisProjectId,
         COALESCE(pr.RequestingUser, p.CreatedBy) AS CreatedBy,
-        pr.Status                    AS Status
+        pr.Status                    AS Status,
+        ps.ActionStatus              AS ActionStatus
       FROM project_samples ps
       JOIN project_requests pr ON ps.RequestID = pr.RequestID
       JOIN project p          ON pr.ProjectID = p.ProjectID
@@ -89,10 +93,17 @@ module.exports = (db) => {
 
     db.query(sql, [requestId], (err, rows) => {
       if (err) {
-        console.error("[ERR] /api/supervisor/request-samples/:requestId:", err.message);
-        return res.status(500).json({ error: "Failed to fetch samples for the request." });
+        console.error(
+          "[ERR] /api/supervisor/request-samples/:requestId:",
+          err.message
+        );
+        return res
+          .status(500)
+          .json({ error: "Failed to fetch samples for the request." });
       }
-      console.log(`[RES] /api/supervisor/request-samples/${requestId} → ${rows.length} rows`);
+      console.log(
+        `[RES] /api/supervisor/request-samples/${requestId} → ${rows.length} rows`
+      );
       res.json(rows || []);
     });
   });

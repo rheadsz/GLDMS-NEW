@@ -15,21 +15,20 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
 
   // uiByTest[k] = { specimenCount, action, actionDate }
   const [uiByTest, setUiByTest] = useState({});
-  const [selectedKeys, setSelectedKeys] = useState(new Set());
+  // Per-test editability (checkbox-driven). Default is editable (true) until a status
+  // is selected, then it becomes locked (false) until user checks the box again.
+  const [editableTests, setEditableTests] = useState({});
   const [rejectModal, setRejectModal] = useState({
     open: false,
     key: null,
     prevAction: null,
     qty: false,
     quality: false,
+    comment: "",
   });
 
-  // Edit flow + autosave
-  const [isEditing, setIsEditing] = useState(false);
-  const [userEdited, setUserEdited] = useState(false);
-
-  // Collapsible details for the active sample on the right side
-  const [sampleDetailsOpen, setSampleDetailsOpen] = useState(false);
+  // Collapsible details per sample on the right side (allow multiple open)
+  const [openSamples, setOpenSamples] = useState({});
 
   // Track focused editable controls to avoid mid-change autosaves
   const focusCountRef = useRef(0);
@@ -47,8 +46,6 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     setActive(null);
     setUiByTest({});
     setSaveMsg("");
-    setIsEditing(false);
-    setUserEdited(false);
     focusCountRef.current = 0;
     setHasFocusedEditor(false);
 
@@ -121,44 +118,19 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     }
   }, [sampleSummaries, active]);
 
-  const activeTests = useMemo(() => {
-    if (!active) return [];
-    return groupedBySample.get(active.SampleID) || [];
-  }, [active, groupedBySample]);
-
   // Stable key
-  const rowKey = (t, idx) =>
+  const rowKey = (t, idx, sampleId) =>
     t.TestID ??
     t.TestRequestID ??
-    `${active?.SampleID ?? "sample"}-${t.TestName ?? "test"}-${idx}`;
+    `${sampleId ?? "sample"}-${t.TestName ?? "test"}-${idx}`;
 
   // Seed UI from DB values (not a user edit)
-  const seedUiFromDB = () => {
-    setUiByTest((prev) => {
-      const next = {};
-      activeTests.forEach((t, idx) => {
-        const k = rowKey(t, idx);
-        next[k] = prev[k] ?? {
-          specimenCount:
-            typeof t.NumberOfSpecimen === "number" ? t.NumberOfSpecimen : 1,
-          action: t.TestStatus ?? "Record Created",
-          actionDate: null, // set only when user changes action
-        };
-      });
-      return next;
-    });
-    setUserEdited(false);
-    setSaveMsg("");
-  };
-
   useEffect(() => {
-    seedUiFromDB();
     originalUiSnapshotRef.current = {};
-    // reset focus tracking when sample/tests change
+    // reset focus tracking when data changes
     focusCountRef.current = 0;
     setHasFocusedEditor(false);
-    setSelectedKeys(new Set());
-  }, [activeTests]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const statusTextClass = (status) => {
     if (!status) return "text-muted";
@@ -184,107 +156,16 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     }
   };
 
-  // AUTOSAVE: only when editing, there are changes, and no editor is focused
-  useEffect(() => {
-    if (!isEditing || !userEdited || activeTests.length === 0) return;
-    if (hasFocusedEditor) return; // don't save mid-interaction
-
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      void saveActiveSample(/*fromAutosave*/ true);
-    }, 800);
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uiByTest, userEdited, isEditing, hasFocusedEditor, active?.SampleID]);
-
-  // Save current edits (manual or autosave)
-  const saveActiveSample = async (fromAutosave = false) => {
-    if (!active) return;
-    if (!userEdited) {
-      if (!fromAutosave) {
-        setIsEditing(false);
-        setSaveMsg("No changes.");
-      }
-      return;
-    }
-
-    const updates = activeTests
-      .map((t, idx) => {
-        const k = rowKey(t, idx);
-        const u = uiByTest[k] || {};
-        return {
-          TestID: t.TestID,
-          TestStatus: u.action ?? null,
-          NumberOfSpecimen:
-            typeof u.specimenCount === "number" ? u.specimenCount : null,
-          // If Action changed in this session, we have a local YYYY-MM-DD; else keep DB value
-          DateAssigned: u.actionDate ? u.actionDate : t.DateAssigned ?? null,
-        };
-      })
-      .filter((u) => typeof u.TestID !== "undefined" && u.TestID !== null);
-
-    setSaving(true);
-    setErr(null);
-    setSaveMsg("");
-    try {
-      const r = await fetch("/api/supervisor/request-samples/update-tests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ updates }),
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
-
-      setSaveMsg(`All changes saved${data.count ? ` (${data.count})` : ""}.`);
-      setUserEdited(false);
-
-      // Per your flow: after autosave completes, show display (view) again
-      setIsEditing(false);
-
-      // Optionally fetch updated rows if you want to re-pull DateAssigned from DB
-      // const reload = await fetch("/api/supervisor/request-samples");
-      // const all = await reload.json();
-      // const filtered = requestId
-      //   ? all.filter((r) => String(r.RequestID) === String(requestId))
-      //   : all;
-      // setRows(filtered);
-    } catch (e) {
-      setErr(e.message || "Failed to save.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Begin/Cancel edit
-  const beginEdit = () => {
-    originalUiSnapshotRef.current = JSON.parse(JSON.stringify(uiByTest));
-    setIsEditing(true);
-    setSaveMsg("");
-    setErr(null);
-    setUserEdited(false);
-  };
-  const cancelEdit = () => {
-    const snap = originalUiSnapshotRef.current || {};
-    if (Object.keys(snap).length) setUiByTest(snap);
-    else seedUiFromDB();
-    setIsEditing(false);
-    setUserEdited(false);
-    setSaveMsg("Changes discarded.");
-    // clear any pending autosave
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-  };
-
   // Reject modal helpers (top-level)
-  const openRejectModal = (key, prevAction) => {
+  const openRejectModal = (key, prevAction, test) => {
     setRejectModal({
       open: true,
       key,
       prevAction: prevAction || null,
+      test: test || null,
       qty: false,
       quality: false,
+      comment: "",
     });
   };
   const closeRejectModal = () => {
@@ -292,8 +173,10 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
       open: false,
       key: null,
       prevAction: null,
+      test: null,
       qty: false,
       quality: false,
+      comment: "",
     });
   };
   const confirmRejectModal = () => {
@@ -301,20 +184,24 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     const reasons = [];
     if (rejectModal.qty) reasons.push("Insufficient Quantity");
     if (rejectModal.quality) reasons.push("Insufficient Quality");
+    const comment = String(rejectModal.comment || "").trim();
+    if (comment) reasons.push(`Comment: ${comment}`);
     if (reasons.length === 0) return; // require at least one
-    const today = new Date().toLocaleDateString("en-CA");
+
+    // Persist immediately (no edit mode)
+    const key = rejectModal.key;
+    const test = rejectModal.test;
     setUiByTest((prev) => ({
       ...prev,
-      [rejectModal.key]: {
-        ...(prev[rejectModal.key] || {}),
+      [key]: {
+        ...(prev[key] || {}),
         action: "Rejected",
-        actionDate: today,
+        actionDate: new Date().toLocaleDateString("en-CA"),
         rejectReasons: reasons,
       },
     }));
-    setUserEdited(true);
-    setSaveMsg("");
     closeRejectModal();
+    void updateSingleTest(key, test, "Rejected");
   };
 
   // Helpers to track focus/blur for each editable control
@@ -330,50 +217,60 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     // no immediate save here — effect will run and debounce after blur
   };
 
-  // Selection helpers
-  const allRowKeys = useMemo(
-    () => activeTests.map((t, idx) => rowKey(t, idx)),
-    [activeTests]
-  );
-  const allSelected = useMemo(
-    () => allRowKeys.length > 0 && allRowKeys.every((k) => selectedKeys.has(k)),
-    [allRowKeys, selectedKeys]
-  );
-  const toggleAll = () => {
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      const every = allRowKeys.every((k) => next.has(k));
-      if (every) allRowKeys.forEach((k) => next.delete(k));
-      else allRowKeys.forEach((k) => next.add(k));
-      return next;
-    });
-  };
-  const toggleOne = (k) => {
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(k)) next.delete(k);
-      else next.add(k);
-      return next;
-    });
-  };
+  // Selection/bulk helpers removed (no bulk actions in dropdown-only mode).
 
-  // Bulk apply action to selected
-  const applyBulkAction = (label) => {
-    if (!isEditing || selectedKeys.size === 0) return;
+  // Inline update (no edit mode): update a single test row immediately
+  const updateSingleTest = async (rowKeyStr, test, nextStatus) => {
+    if (!test?.TestID) return;
+
     const today = new Date().toLocaleDateString("en-CA");
-    setUiByTest((prev) => {
-      const next = { ...prev };
-      selectedKeys.forEach((k) => {
-        next[k] = {
-          ...(next[k] || {}),
-          action: label,
-          actionDate: today,
-        };
-      });
-      return next;
-    });
-    setUserEdited(true);
+    const prevUi = uiByTest[rowKeyStr] || {};
+
+    const updates = [
+      {
+        TestID: test.TestID,
+        TestStatus: nextStatus ?? null,
+        NumberOfSpecimen:
+          typeof prevUi.specimenCount === "number"
+            ? prevUi.specimenCount
+            : null,
+        DateAssigned: today,
+      },
+    ];
+
+    setSaving(true);
+    setErr(null);
     setSaveMsg("");
+    try {
+      const r = await fetch("/api/supervisor/request-samples/update-tests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ updates }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
+
+      setUiByTest((prev) => ({
+        ...prev,
+        [rowKeyStr]: {
+          ...(prev[rowKeyStr] || {}),
+          action: nextStatus,
+          actionDate: today,
+        },
+      }));
+
+      // After a successful update, lock this row again (non-editable)
+      setEditableTests((prev) => ({
+        ...prev,
+        [rowKeyStr]: false,
+      }));
+
+      setSaveMsg(`Saved${data.count ? ` (${data.count})` : ""}.`);
+    } catch (e) {
+      setErr(e.message || "Failed to save.");
+    } finally {
+      setSaving(false);
+    }
   };
   return (
     <div className="lm-main d-flex">
@@ -423,6 +320,38 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
         /* Tighter tests table */
         .tbl-tests { table-layout: fixed; }
         .tbl-tests th, .tbl-tests td { padding: 6px 8px !important; }
+
+        .cmp-modal-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.45);
+          z-index: 2000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 16px;
+        }
+        .cmp-modal {
+          background: #fff;
+          border-radius: 8px;
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+          width: 100%;
+          max-width: 520px;
+          max-height: calc(100vh - 32px);
+          overflow: auto;
+          border: 1px solid rgba(0, 0, 0, 0.12);
+        }
+        .cmp-modal .header {
+          padding: 12px 16px;
+          border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        }
+        .cmp-modal .body {
+          padding: 12px 16px;
+        }
+        .cmp-modal .footer {
+          padding: 12px 16px;
+          border-top: 1px solid rgba(0, 0, 0, 0.08);
+        }
       `}</style>
 
       {/* LEFT: Samples list */}
@@ -478,8 +407,6 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                         setActive(r);
                         setUiByTest({});
                         setSaveMsg("");
-                        setIsEditing(false);
-                        setUserEdited(false);
                         focusCountRef.current = 0;
                         setHasFocusedEditor(false);
                       }}
@@ -490,8 +417,6 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                           setActive(r);
                           setUiByTest({});
                           setSaveMsg("");
-                          setIsEditing(false);
-                          setUserEdited(false);
                           focusCountRef.current = 0;
                           setHasFocusedEditor(false);
                         }
@@ -535,12 +460,13 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
             <div className="text-muted">No samples for this request.</div>
           ) : (
             samplesForActiveRequest.map((s) => {
-              const isActiveSample =
-                (active?.SampleID ?? active?.id) === (s.SampleID ?? s.id);
+              const sampleId = s.SampleID ?? s.id;
+              const isOpen = openSamples[sampleId] ?? false;
               const headerSampleNumber = s.SampleNumber ?? s.SampleID ?? "—";
               const headerDepthFrom = s.DepthFrom ?? "—";
               const headerDepthTo = s.DepthTo ?? "—";
               const headerContainer = s.ContainerType ?? "—";
+              const sampleTests = groupedBySample.get(sampleId) || [];
 
               return (
                 <div
@@ -552,134 +478,49 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                     className="d-flex align-items-center justify-content-between border rounded px-3 py-2 bg-light"
                     style={{ cursor: "pointer" }}
                     onClick={() => {
-                      if (!isActiveSample) {
-                        setActive(s);
-                        setSampleDetailsOpen(false);
-                        setUiByTest({});
-                        setSaveMsg("");
-                        setIsEditing(false);
-                        setUserEdited(false);
-                        focusCountRef.current = 0;
-                        setHasFocusedEditor(false);
-                      } else {
-                        setSampleDetailsOpen((v) => !v);
-                      }
+                      setOpenSamples((prev) => ({
+                        ...prev,
+                        [sampleId]: !(prev[sampleId] ?? false),
+                      }));
                     }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
-                        if (!isActiveSample) {
-                          setActive(s);
-                          setSampleDetailsOpen(false);
-                          setUiByTest({});
-                          setSaveMsg("");
-                          setIsEditing(false);
-                          setUserEdited(false);
-                          focusCountRef.current = 0;
-                          setHasFocusedEditor(false);
-                        } else {
-                          setSampleDetailsOpen((v) => !v);
-                        }
+                        setOpenSamples((prev) => ({
+                          ...prev,
+                          [sampleId]: !(prev[sampleId] ?? false),
+                        }));
                       }
                     }}
                     role="button"
                     tabIndex={0}
-                    aria-expanded={isActiveSample && sampleDetailsOpen}
+                    aria-expanded={isOpen}
                   >
                     <div className="d-flex align-items-center gap-2">
-                      <span style={{ fontSize: 18 }}>
-                        {isActiveSample && sampleDetailsOpen ? "▾" : "▸"}
-                      </span>
+                      <span style={{ fontSize: 18 }}>{isOpen ? "▾" : "▸"}</span>
                       <div>
                         <div className="fw-semibold">
                           {`Sample ${headerSampleNumber} (${headerDepthFrom}-${headerDepthTo}) : ${headerContainer}`}
-                        </div>
-                        <div className="small text-muted">
-                          Request {s.RequestID ?? "—"} · Project{" "}
-                          {s.EfisProjectID ?? "—"} · Submitter{" "}
-                          {s.CreatedBy ?? "—"}
                         </div>
                       </div>
                     </div>
                   </div>
 
                   {/* Only render details for the active + expanded sample */}
-                  {isActiveSample && sampleDetailsOpen && (
+                  {isOpen && (
                     <>
-                      {/* Controls + status */}
-                      <div className="d-flex align-items-center gap-2 mt-3">
-                        {!isEditing ? (
-                          <button
-                            className="btn btn-sm btn-primary"
-                            onClick={beginEdit}
-                            disabled={saving || selectedKeys.size === 0}
-                            title={
-                              selectedKeys.size === 0
-                                ? "Select at least one test to enable editing"
-                                : "Enter edit mode"
-                            }
-                          >
-                            Edit
-                          </button>
-                        ) : (
-                          <>
-                            <button
-                              className="btn btn-sm btn-success"
-                              onClick={() => saveActiveSample(false)}
-                              disabled={saving || !userEdited}
-                            >
-                              Save
-                            </button>
-                            <button
-                              className="btn btn-sm btn-secondary"
-                              onClick={cancelEdit}
-                              disabled={saving}
-                            >
-                              Cancel
-                            </button>
-                          </>
-                        )}
-                        <button
-                          className="btn btn-sm btn-outline-secondary"
-                          onClick={() => setRefreshTick((n) => n + 1)}
-                          disabled={loading || saving}
-                        >
-                          Refresh
-                        </button>
-
-                        {isEditing && (
-                          <>
-                            <span className="ms-3 small">Bulk set:</span>
-                            <button
-                              className="btn btn-sm btn-outline-primary"
-                              onClick={() => applyBulkAction("Accepted")}
-                              disabled={saving || selectedKeys.size === 0}
-                            >
-                              Checked-in
-                            </button>
-                            <button
-                              className="btn btn-sm btn-outline-danger"
-                              onClick={() => applyBulkAction("Not Received")}
-                              disabled={saving || selectedKeys.size === 0}
-                            >
-                              Not Received
-                            </button>
-                          </>
-                        )}
-
+                      <div className="d-flex align-items-center mt-3">
                         <span className="ms-auto small text-muted">
                           {saving
                             ? "Saving…"
                             : saveMsg
                             ? saveMsg
-                            : isEditing
-                            ? "Edit mode"
                             : loading
                             ? "Loading…"
-                            : "View mode"}
+                            : ""}
                         </span>
                         {err && (
-                          <span className="text-danger small">{err}</span>
+                          <span className="text-danger small ms-2">{err}</span>
                         )}
                       </div>
 
@@ -693,15 +534,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                                   width: "2.25rem",
                                   textAlign: "center",
                                 }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  className="form-check-input"
-                                  checked={allSelected}
-                                  onChange={toggleAll}
-                                  aria-label="Select all tests"
-                                />
-                              </th>
+                              ></th>
                               <th>Requested Test</th>
                               <th style={{ width: "6rem" }}>
                                 Number of Specimen
@@ -711,7 +544,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                             </tr>
                           </thead>
                           <tbody>
-                            {activeTests.length === 0 ? (
+                            {sampleTests.length === 0 ? (
                               <tr>
                                 <td
                                   colSpan={5}
@@ -721,34 +554,21 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                                 </td>
                               </tr>
                             ) : (
-                              activeTests.map((t, idx) => {
-                                const k = rowKey(t, idx);
+                              sampleTests.map((t, idx) => {
+                                const k = rowKey(t, idx, sampleId);
                                 const rowUi = uiByTest[k] || {
                                   specimenCount: 1,
                                   action: "Record Created",
                                   actionDate: null,
                                 };
 
-                                // Prefer DB DateAssigned (YYYY-MM-DD), fallback to local actionDate (YYYY-MM-DD)
                                 const displayDate =
                                   t.DateAssigned || rowUi.actionDate;
 
-                                const isSelected = selectedKeys.has(k);
-                                // Underlying status from DB or UI; fallback to null
                                 const rawStatus =
                                   rowUi.action || t.TestStatus || null;
-                                let displayStatus = rawStatus;
-                                if (!displayStatus) displayStatus = "Requested";
-                                // While in edit mode, if row not selected, show Requested
-                                if (isEditing && !isSelected) {
-                                  displayStatus = "Requested";
-                                } else if (
-                                  !isEditing &&
-                                  displayStatus === "Accepted"
-                                ) {
-                                  // View mode mapping: Accepted -> Checked-in
-                                  displayStatus = "Checked-in";
-                                }
+
+                                const isEditable = editableTests[k] ?? true;
 
                                 return (
                                   <tr key={k}>
@@ -756,120 +576,59 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                                       <input
                                         type="checkbox"
                                         className="form-check-input"
-                                        checked={isSelected}
-                                        onChange={() => toggleOne(k)}
-                                        aria-label={`Select test ${
+                                        checked={isEditable}
+                                        onChange={() => {
+                                          setEditableTests((prev) => ({
+                                            ...prev,
+                                            [k]: !(prev[k] ?? true),
+                                          }));
+                                        }}
+                                        aria-label={`Enable editing for test ${
                                           t.TestName ?? ""
                                         }`}
                                       />
                                     </td>
                                     <td>{t.TestName ?? "—"}</td>
-
                                     <td style={{ maxWidth: 96 }}>
-                                      {isEditing ? (
-                                        <select
-                                          className="form-select form-select-sm"
-                                          value={rowUi.specimenCount}
-                                          onFocus={handleFocus}
-                                          onBlur={handleBlur}
-                                          onChange={(e) => {
-                                            setUiByTest((prev) => ({
-                                              ...prev,
-                                              [k]: {
-                                                ...prev[k],
-                                                specimenCount:
-                                                  Number(e.target.value) || 1,
-                                              },
-                                            }));
-                                            setUserEdited(true);
-                                            setSaveMsg("");
-                                          }}
-                                        >
-                                          {[1, 2, 3, 4, 5].map((n) => (
-                                            <option key={n} value={n}>
-                                              {n}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      ) : (
-                                        <span className="mono">
-                                          {rowUi.specimenCount}
-                                        </span>
-                                      )}
+                                      <span className="mono">
+                                        {rowUi.specimenCount}
+                                      </span>
                                     </td>
-
-                                    {/* Status (editable in place) */}
                                     <td>
-                                      {isEditing && isSelected ? (
-                                        <select
-                                          className="form-select form-select-sm"
-                                          value={
-                                            [
-                                              "Accepted",
-                                              "Rejected",
-                                              "Not Received",
-                                            ].includes(
-                                              String(
-                                                rowUi.action ||
-                                                  t.TestStatus ||
-                                                  ""
-                                              )
-                                            )
-                                              ? String(
-                                                  rowUi.action || t.TestStatus
-                                                )
-                                              : ""
+                                      <select
+                                        className="form-select form-select-sm"
+                                        value={
+                                          [
+                                            "Accepted",
+                                            "Rejected",
+                                            "Not Received",
+                                          ].includes(String(rawStatus ?? ""))
+                                            ? String(rawStatus)
+                                            : ""
+                                        }
+                                        disabled={saving || !isEditable}
+                                        onChange={(e) => {
+                                          const val = e.target.value || null;
+                                          const prevVal = String(
+                                            rawStatus ?? ""
+                                          );
+                                          if (val === "Rejected") {
+                                            openRejectModal(k, prevVal, t);
+                                            return;
                                           }
-                                          onFocus={handleFocus}
-                                          onBlur={handleBlur}
-                                          onChange={(e) => {
-                                            const val = e.target.value || null;
-                                            const prevVal = String(
-                                              rowUi.action || t.TestStatus || ""
-                                            );
-                                            if (
-                                              val === "Rejected" ||
-                                              val === "Reject"
-                                            ) {
-                                              // Open modal, do not apply change yet
-                                              openRejectModal(k, prevVal);
-                                              return;
-                                            }
-                                            setUiByTest((prev) => ({
-                                              ...prev,
-                                              [k]: {
-                                                ...prev[k],
-                                                action: val,
-                                                actionDate:
-                                                  new Date().toLocaleDateString(
-                                                    "en-CA"
-                                                  ),
-                                                // clear reject reasons if not rejected
-                                                ...(val !== "Rejected"
-                                                  ? { rejectReasons: [] }
-                                                  : {}),
-                                              },
-                                            }));
-                                            setUserEdited(true);
-                                            setSaveMsg("");
-                                          }}
-                                        >
-                                          <option value="">— Select —</option>
-                                          <option value="Accepted">
-                                            Checked-in
-                                          </option>
-                                          <option>Reject</option>
-                                          <option>Not Received</option>
-                                        </select>
-                                      ) : (
-                                        <span
-                                          className={statusTextClass(rawStatus)}
-                                        >
-                                          {displayStatus}
-                                        </span>
-                                      )}
+                                          void updateSingleTest(k, t, val);
+                                        }}
+                                      >
+                                        <option value="">Requested</option>
+                                        <option value="Accepted">
+                                          Checked-in
+                                        </option>
+                                        <option value="Rejected">Reject</option>
+                                        <option value="Not Received">
+                                          Not Received
+                                        </option>
+                                      </select>
                                     </td>
-
                                     <td>
                                       {displayDate ? fmtDate(displayDate) : "—"}
                                     </td>
@@ -944,6 +703,27 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                               </div>
                               <div className="form-text mt-2">
                                 You may select one or both reasons.
+                              </div>
+                              <div className="mt-3">
+                                <label
+                                  className="form-label"
+                                  htmlFor="rejComment"
+                                >
+                                  Comment
+                                </label>
+                                <textarea
+                                  id="rejComment"
+                                  className="form-control"
+                                  rows={3}
+                                  value={rejectModal.comment}
+                                  onChange={(e) =>
+                                    setRejectModal((m) => ({
+                                      ...m,
+                                      comment: e.target.value,
+                                    }))
+                                  }
+                                  placeholder="Enter comment (optional)"
+                                />
                               </div>
                             </div>
                             <div className="footer d-flex justify-content-end gap-2 mt-3">

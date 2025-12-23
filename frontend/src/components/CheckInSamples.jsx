@@ -299,17 +299,6 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
             <div className="text-muted">Select a request to view details.</div>
           ) : (
             <>
-              <div className="d-flex align-items-center gap-2 mb-2">
-                <button
-                  className="btn btn-sm btn-outline-primary"
-                  onClick={() => setRefreshTick((n) => n + 1)}
-                  disabled={loading}
-                  title="Refetch latest data"
-                >
-                  Refresh
-                </button>
-              </div>
-
               <div className="table-responsive">
                 <table className="table table-bordered table-sm mb-0">
                   <tbody>
@@ -373,8 +362,7 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                                   <th>Depth To</th>
                                   <th>Container Type</th>
                                   <th>Field Collection Date</th>
-                                  <th>Action</th>
-                                  <th>Status</th>
+                                  <th>Action/Status</th>
                                 </tr>
                               )}
                               {/* Sample rows for this borehole */}
@@ -431,12 +419,6 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                                           Not Received
                                         </option>
                                       </select>
-                                    </td>
-                                    <td>
-                                      {s.ActionStatus &&
-                                      String(s.ActionStatus).trim() !== ""
-                                        ? s.ActionStatus
-                                        : "Shipped"}
                                     </td>
                                   </tr>
                                 ))}

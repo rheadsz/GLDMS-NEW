@@ -5,6 +5,10 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
   const SIDEBAR_OPEN_PX = 640;
   const SIDEBAR_CLOSED_PX = 0;
 
+  const ACTIVE_REQUEST_STORAGE_KEY = "gldms_checkin_requests_active_request";
+  const OPEN_SAMPLES_STORAGE_KEY_PREFIX =
+    "gldms_checkin_requests_open_samples:";
+
   const [rows, setRows] = useState([]);
   const [active, setActive] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -29,6 +33,10 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
 
   // Collapsible details per sample on the right side (allow multiple open)
   const [openSamples, setOpenSamples] = useState({});
+
+  const activeRequestId = useMemo(() => {
+    return active?.RequestID ?? active?.RequestId ?? null;
+  }, [active]);
 
   // Track focused editable controls to avoid mid-change autosaves
   const focusCountRef = useRef(0);
@@ -112,11 +120,91 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     );
   }, [sampleSummaries, active]);
 
-  useEffect(() => {
-    if (!active && sampleSummaries.length > 0) {
-      setActive(sampleSummaries[0]);
+  const groupedByBorehole = useMemo(() => {
+    const map = new Map();
+    for (const s of samplesForActiveRequest) {
+      const key = s.BoreholeID ?? "(no borehole)";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(s);
     }
-  }, [sampleSummaries, active]);
+    return map;
+  }, [samplesForActiveRequest]);
+
+  const [openBoreholes, setOpenBoreholes] = useState({});
+  const toggleBorehole = (key) => {
+    setOpenBoreholes((prev) => ({
+      ...prev,
+      [key]: !(prev && Object.prototype.hasOwnProperty.call(prev, key)
+        ? prev[key]
+        : true),
+    }));
+  };
+
+  useEffect(() => {
+    if (requestSummaries.length === 0) return;
+
+    const activeReqId = active?.RequestID ?? active?.RequestId;
+    const stillValid =
+      activeReqId != null &&
+      requestSummaries.some(
+        (r) => String(r.RequestID ?? r.RequestId) === String(activeReqId)
+      );
+    if (stillValid) return;
+
+    let desired = null;
+    try {
+      const saved = localStorage.getItem(ACTIVE_REQUEST_STORAGE_KEY);
+      if (saved != null) {
+        desired = requestSummaries.find(
+          (r) => String(r.RequestID ?? r.RequestId) === String(saved)
+        );
+      }
+    } catch {
+      // ignore storage errors
+    }
+
+    setActive(desired ?? requestSummaries[0]);
+  }, [requestSummaries, active]);
+
+  // Restore expanded sample sections for the active request
+  useEffect(() => {
+    if (!activeRequestId) return;
+    try {
+      const raw = localStorage.getItem(
+        `${OPEN_SAMPLES_STORAGE_KEY_PREFIX}${String(activeRequestId)}`
+      );
+      if (!raw) {
+        setOpenSamples({});
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        setOpenSamples({});
+        return;
+      }
+      const next = {};
+      parsed.forEach((id) => {
+        next[id] = true;
+      });
+      setOpenSamples(next);
+    } catch {
+      setOpenSamples({});
+    }
+  }, [activeRequestId]);
+
+  // Persist expanded sample sections for the active request
+  useEffect(() => {
+    if (!activeRequestId) return;
+    try {
+      const openIds = Object.keys(openSamples).filter((k) => openSamples[k]);
+      localStorage.setItem(
+        `${OPEN_SAMPLES_STORAGE_KEY_PREFIX}${String(activeRequestId)}`,
+        JSON.stringify(openIds)
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [openSamples, activeRequestId]);
 
   // Stable key
   const rowKey = (t, idx, sampleId) =>
@@ -187,6 +275,12 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     const comment = String(rejectModal.comment || "").trim();
     if (comment) reasons.push(`Comment: ${comment}`);
     if (reasons.length === 0) return; // require at least one
+
+    const ok = window.confirm("Are you sure you want to save changes?");
+    if (!ok) {
+      closeRejectModal();
+      return;
+    }
 
     // Persist immediately (no edit mode)
     const key = rejectModal.key;
@@ -409,6 +503,17 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                         setSaveMsg("");
                         focusCountRef.current = 0;
                         setHasFocusedEditor(false);
+                        try {
+                          const reqId = r?.RequestID ?? r?.RequestId;
+                          if (reqId != null) {
+                            localStorage.setItem(
+                              ACTIVE_REQUEST_STORAGE_KEY,
+                              String(reqId)
+                            );
+                          }
+                        } catch {
+                          // ignore storage errors
+                        }
                       }}
                       tabIndex={0}
                       onKeyDown={(e) => {
@@ -419,6 +524,17 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                           setSaveMsg("");
                           focusCountRef.current = 0;
                           setHasFocusedEditor(false);
+                          try {
+                            const reqId = r?.RequestID ?? r?.RequestId;
+                            if (reqId != null) {
+                              localStorage.setItem(
+                                ACTIVE_REQUEST_STORAGE_KEY,
+                                String(reqId)
+                              );
+                            }
+                          } catch {
+                            // ignore storage errors
+                          }
                         }
                       }}
                       aria-selected={isActive}
@@ -459,300 +575,420 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
           ) : samplesForActiveRequest.length === 0 ? (
             <div className="text-muted">No samples for this request.</div>
           ) : (
-            samplesForActiveRequest.map((s) => {
-              const sampleId = s.SampleID ?? s.id;
-              const isOpen = openSamples[sampleId] ?? false;
-              const headerSampleNumber = s.SampleNumber ?? s.SampleID ?? "—";
-              const headerDepthFrom = s.DepthFrom ?? "—";
-              const headerDepthTo = s.DepthTo ?? "—";
-              const headerContainer = s.ContainerType ?? "—";
-              const sampleTests = groupedBySample.get(sampleId) || [];
+            Array.from(groupedByBorehole.entries()).map(
+              ([boreholeId, list]) => {
+                const key = String(boreholeId);
+                const isBoreholeOpen =
+                  openBoreholes &&
+                  Object.prototype.hasOwnProperty.call(openBoreholes, key)
+                    ? openBoreholes[key]
+                    : true;
 
-              return (
-                <div
-                  key={s.SampleID ?? `${s.EfisProjectID}-${s.CreatedBy}`}
-                  className="mb-3"
-                >
-                  {/* Collapsible header for this sample */}
-                  <div
-                    className="d-flex align-items-center justify-content-between border rounded px-3 py-2 bg-light"
-                    style={{ cursor: "pointer" }}
-                    onClick={() => {
-                      setOpenSamples((prev) => ({
-                        ...prev,
-                        [sampleId]: !(prev[sampleId] ?? false),
-                      }));
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        setOpenSamples((prev) => ({
-                          ...prev,
-                          [sampleId]: !(prev[sampleId] ?? false),
-                        }));
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    aria-expanded={isOpen}
-                  >
-                    <div className="d-flex align-items-center gap-2">
-                      <span style={{ fontSize: 18 }}>{isOpen ? "▾" : "▸"}</span>
-                      <div>
-                        <div className="fw-semibold">
-                          {`Sample ${headerSampleNumber} (${headerDepthFrom}-${headerDepthTo}) : ${headerContainer}`}
-                        </div>
-                      </div>
+                return (
+                  <React.Fragment key={key}>
+                    <div
+                      className="border rounded px-3 py-2 mb-2 bg-light"
+                      style={{ cursor: "pointer" }}
+                      onClick={() => toggleBorehole(key)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          toggleBorehole(key);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={isBoreholeOpen}
+                    >
+                      <span style={{ marginRight: 8 }}>
+                        {isBoreholeOpen ? "▾" : "▸"}
+                      </span>
+                      <strong>Borehole ID:</strong> {boreholeId ?? "—"}
                     </div>
-                  </div>
 
-                  {/* Only render details for the active + expanded sample */}
-                  {isOpen && (
-                    <>
-                      <div className="d-flex align-items-center mt-3">
-                        <span className="ms-auto small text-muted">
-                          {saving
-                            ? "Saving…"
-                            : saveMsg
-                            ? saveMsg
-                            : loading
-                            ? "Loading…"
-                            : ""}
-                        </span>
-                        {err && (
-                          <span className="text-danger small ms-2">{err}</span>
-                        )}
-                      </div>
+                    {isBoreholeOpen &&
+                      list.map((s) => {
+                        const sampleId = s.SampleID ?? s.id;
+                        const isOpen = openSamples[sampleId] ?? false;
+                        const headerSampleNumber =
+                          s.SampleNumber ?? s.SampleID ?? "—";
+                        const headerDepthFrom = s.DepthFrom ?? "—";
+                        const headerDepthTo = s.DepthTo ?? "—";
+                        const headerContainer = s.ContainerType ?? "—";
+                        const sampleTests = groupedBySample.get(sampleId) || [];
 
-                      {/* TABLE: Requested tests / check-in status */}
-                      <div className="table-responsive mt-3">
-                        <table className="table table-bordered table-sm mb-0">
-                          <thead className="table-light">
-                            <tr>
-                              <th
-                                style={{
-                                  width: "2.25rem",
-                                  textAlign: "center",
-                                }}
-                              ></th>
-                              <th>Requested Test</th>
-                              <th style={{ width: "6rem" }}>
-                                Number of Specimen
-                              </th>
-                              <th>Status</th>
-                              <th>Date</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {sampleTests.length === 0 ? (
-                              <tr>
-                                <td
-                                  colSpan={5}
-                                  className="text-center text-muted"
-                                >
-                                  No tests for this sample.
-                                </td>
-                              </tr>
-                            ) : (
-                              sampleTests.map((t, idx) => {
-                                const k = rowKey(t, idx, sampleId);
-                                const rowUi = uiByTest[k] || {
-                                  specimenCount: 1,
-                                  action: "Record Created",
-                                  actionDate: null,
-                                };
-
-                                const displayDate =
-                                  t.DateAssigned || rowUi.actionDate;
-
-                                const rawStatus =
-                                  rowUi.action || t.TestStatus || null;
-
-                                const isEditable = editableTests[k] ?? true;
-
-                                return (
-                                  <tr key={k}>
-                                    <td className="text-center">
-                                      <input
-                                        type="checkbox"
-                                        className="form-check-input"
-                                        checked={isEditable}
-                                        onChange={() => {
-                                          setEditableTests((prev) => ({
-                                            ...prev,
-                                            [k]: !(prev[k] ?? true),
-                                          }));
-                                        }}
-                                        aria-label={`Enable editing for test ${
-                                          t.TestName ?? ""
-                                        }`}
-                                      />
-                                    </td>
-                                    <td>{t.TestName ?? "—"}</td>
-                                    <td style={{ maxWidth: 96 }}>
-                                      <span className="mono">
-                                        {rowUi.specimenCount}
-                                      </span>
-                                    </td>
-                                    <td>
-                                      <select
-                                        className="form-select form-select-sm"
-                                        value={
-                                          [
-                                            "Accepted",
-                                            "Rejected",
-                                            "Not Received",
-                                          ].includes(String(rawStatus ?? ""))
-                                            ? String(rawStatus)
-                                            : ""
-                                        }
-                                        disabled={saving || !isEditable}
-                                        onChange={(e) => {
-                                          const val = e.target.value || null;
-                                          const prevVal = String(
-                                            rawStatus ?? ""
-                                          );
-                                          if (val === "Rejected") {
-                                            openRejectModal(k, prevVal, t);
-                                            return;
-                                          }
-                                          void updateSingleTest(k, t, val);
-                                        }}
-                                      >
-                                        <option value="">Requested</option>
-                                        <option value="Accepted">
-                                          Checked-in
-                                        </option>
-                                        <option value="Rejected">Reject</option>
-                                        <option value="Not Received">
-                                          Not Received
-                                        </option>
-                                      </select>
-                                    </td>
-                                    <td>
-                                      {displayDate ? fmtDate(displayDate) : "—"}
-                                    </td>
-                                  </tr>
-                                );
-                              })
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Reject reasons modal */}
-                      {rejectModal.open && (
-                        <div
-                          className="cmp-modal-backdrop"
-                          role="dialog"
-                          aria-modal="true"
-                          onMouseDown={(e) => {
-                            if (
-                              e.target.classList.contains("cmp-modal-backdrop")
-                            )
-                              closeRejectModal();
-                          }}
-                        >
-                          <div className="cmp-modal" style={{ maxWidth: 520 }}>
-                            <div className="header">
-                              <h5 className="m-0">Rejection Reason</h5>
-                            </div>
-                            <div className="body">
-                              <p className="mb-2">
-                                Select reason(s) for rejection:
-                              </p>
-                              <div className="form-check">
-                                <input
-                                  className="form-check-input"
-                                  type="checkbox"
-                                  id="rejQty"
-                                  checked={rejectModal.qty}
-                                  onChange={(e) =>
-                                    setRejectModal((m) => ({
-                                      ...m,
-                                      qty: e.target.checked,
-                                    }))
-                                  }
-                                />
-                                <label
-                                  className="form-check-label"
-                                  htmlFor="rejQty"
-                                >
-                                  Insufficient Quantity
-                                </label>
-                              </div>
-                              <div className="form-check">
-                                <input
-                                  className="form-check-input"
-                                  type="checkbox"
-                                  id="rejQuality"
-                                  checked={rejectModal.quality}
-                                  onChange={(e) =>
-                                    setRejectModal((m) => ({
-                                      ...m,
-                                      quality: e.target.checked,
-                                    }))
-                                  }
-                                />
-                                <label
-                                  className="form-check-label"
-                                  htmlFor="rejQuality"
-                                >
-                                  Insufficient Quality
-                                </label>
-                              </div>
-                              <div className="form-text mt-2">
-                                You may select one or both reasons.
-                              </div>
-                              <div className="mt-3">
-                                <label
-                                  className="form-label"
-                                  htmlFor="rejComment"
-                                >
-                                  Comment
-                                </label>
-                                <textarea
-                                  id="rejComment"
-                                  className="form-control"
-                                  rows={3}
-                                  value={rejectModal.comment}
-                                  onChange={(e) =>
-                                    setRejectModal((m) => ({
-                                      ...m,
-                                      comment: e.target.value,
-                                    }))
-                                  }
-                                  placeholder="Enter comment (optional)"
-                                />
-                              </div>
-                            </div>
-                            <div className="footer d-flex justify-content-end gap-2 mt-3">
-                              <button
-                                type="button"
-                                className="btn btn-outline-secondary"
-                                onClick={closeRejectModal}
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-danger"
-                                onClick={confirmRejectModal}
-                                disabled={
-                                  !rejectModal.qty && !rejectModal.quality
+                        return (
+                          <div
+                            key={
+                              s.SampleID ?? `${s.EfisProjectID}-${s.CreatedBy}`
+                            }
+                            className="mb-3 ms-3"
+                          >
+                            <div
+                              className="d-flex align-items-center justify-content-between border rounded px-3 py-2 bg-white"
+                              style={{ cursor: "pointer" }}
+                              onClick={() => {
+                                setOpenSamples((prev) => ({
+                                  ...prev,
+                                  [sampleId]: !(prev[sampleId] ?? false),
+                                }));
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setOpenSamples((prev) => ({
+                                    ...prev,
+                                    [sampleId]: !(prev[sampleId] ?? false),
+                                  }));
                                 }
-                              >
-                                Confirm Reject
-                              </button>
+                              }}
+                              role="button"
+                              tabIndex={0}
+                              aria-expanded={isOpen}
+                            >
+                              <div className="d-flex align-items-center gap-2">
+                                <span style={{ fontSize: 18 }}>
+                                  {isOpen ? "▾" : "▸"}
+                                </span>
+                                <div className="fw-semibold">
+                                  {`Sample ${headerSampleNumber} (${headerDepthFrom}-${headerDepthTo}) : ${headerContainer}`}
+                                </div>
+                              </div>
                             </div>
+
+                            {isOpen && (
+                              <div className="ms-3">
+                                <div className="d-flex align-items-center mt-3">
+                                  <span className="ms-auto small text-muted">
+                                    {saving
+                                      ? "Saving…"
+                                      : saveMsg
+                                      ? saveMsg
+                                      : loading
+                                      ? "Loading…"
+                                      : ""}
+                                  </span>
+                                  {err && (
+                                    <span className="text-danger small ms-2">
+                                      {err}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="table-responsive mt-3">
+                                  <table className="table table-bordered table-sm mb-0">
+                                    <thead className="table-light">
+                                      <tr>
+                                        <th
+                                          style={{
+                                            width: "2.25rem",
+                                            textAlign: "center",
+                                          }}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            className="form-check-input"
+                                            checked={
+                                              sampleTests.length === 0
+                                                ? false
+                                                : sampleTests
+                                                    .map((t, idx) =>
+                                                      rowKey(t, idx, sampleId)
+                                                    )
+                                                    .every(
+                                                      (k) =>
+                                                        (editableTests[k] ??
+                                                          true) === true
+                                                    )
+                                            }
+                                            ref={(el) => {
+                                              if (!el) return;
+                                              const keys = sampleTests.map(
+                                                (t, idx) =>
+                                                  rowKey(t, idx, sampleId)
+                                              );
+                                              const allChecked =
+                                                keys.length > 0 &&
+                                                keys.every(
+                                                  (k) =>
+                                                    (editableTests[k] ??
+                                                      true) === true
+                                                );
+                                              const someChecked = keys.some(
+                                                (k) =>
+                                                  (editableTests[k] ?? true) ===
+                                                  true
+                                              );
+                                              el.indeterminate =
+                                                !allChecked && someChecked;
+                                            }}
+                                            onChange={(e) => {
+                                              const next = e.target.checked;
+                                              const keys = sampleTests.map(
+                                                (t, idx) =>
+                                                  rowKey(t, idx, sampleId)
+                                              );
+                                              setEditableTests((prev) => {
+                                                const out = { ...prev };
+                                                keys.forEach((k) => {
+                                                  out[k] = next;
+                                                });
+                                                return out;
+                                              });
+                                            }}
+                                            disabled={sampleTests.length === 0}
+                                            aria-label="Select all tests"
+                                          />
+                                        </th>
+                                        <th>Requested Test</th>
+                                        <th style={{ width: "6rem" }}>
+                                          Number of Specimen
+                                        </th>
+                                        <th>Status</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {sampleTests.length === 0 ? (
+                                        <tr>
+                                          <td
+                                            colSpan={4}
+                                            className="text-center text-muted"
+                                          >
+                                            No tests for this sample.
+                                          </td>
+                                        </tr>
+                                      ) : (
+                                        sampleTests.map((t, idx) => {
+                                          const k = rowKey(t, idx, sampleId);
+                                          const rowUi = uiByTest[k] || {
+                                            specimenCount: 1,
+                                            action: "Record Created",
+                                            actionDate: null,
+                                          };
+
+                                          const rawStatus =
+                                            rowUi.action ||
+                                            t.TestStatus ||
+                                            null;
+
+                                          const isEditable =
+                                            editableTests[k] ?? true;
+
+                                          return (
+                                            <tr key={k}>
+                                              <td className="text-center">
+                                                <input
+                                                  type="checkbox"
+                                                  className="form-check-input"
+                                                  checked={isEditable}
+                                                  onChange={() => {
+                                                    setEditableTests(
+                                                      (prev) => ({
+                                                        ...prev,
+                                                        [k]: !(prev[k] ?? true),
+                                                      })
+                                                    );
+                                                  }}
+                                                  aria-label={`Enable editing for test ${
+                                                    t.TestName ?? ""
+                                                  }`}
+                                                />
+                                              </td>
+                                              <td>{t.TestName ?? "—"}</td>
+                                              <td style={{ maxWidth: 96 }}>
+                                                <span className="mono">
+                                                  {rowUi.specimenCount}
+                                                </span>
+                                              </td>
+                                              <td>
+                                                <select
+                                                  className="form-select form-select-sm"
+                                                  value={
+                                                    [
+                                                      "Accepted",
+                                                      "Rejected",
+                                                      "Not Received",
+                                                    ].includes(
+                                                      String(rawStatus ?? "")
+                                                    )
+                                                      ? String(rawStatus)
+                                                      : ""
+                                                  }
+                                                  disabled={
+                                                    saving || !isEditable
+                                                  }
+                                                  onChange={(e) => {
+                                                    const val =
+                                                      e.target.value || null;
+                                                    const prevVal = String(
+                                                      rawStatus ?? ""
+                                                    );
+                                                    if (val === "Rejected") {
+                                                      openRejectModal(
+                                                        k,
+                                                        prevVal,
+                                                        t
+                                                      );
+                                                      return;
+                                                    }
+
+                                                    const ok = window.confirm(
+                                                      "Are you sure you want to save changes?"
+                                                    );
+                                                    if (!ok) return;
+                                                    void updateSingleTest(
+                                                      k,
+                                                      t,
+                                                      val
+                                                    );
+                                                  }}
+                                                >
+                                                  <option value="">
+                                                    Requested
+                                                  </option>
+                                                  <option value="Accepted">
+                                                    Checked-in
+                                                  </option>
+                                                  <option value="Rejected">
+                                                    Reject
+                                                  </option>
+                                                  <option value="Not Received">
+                                                    Not Received
+                                                  </option>
+                                                </select>
+                                              </td>
+                                            </tr>
+                                          );
+                                        })
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+
+                                {rejectModal.open && (
+                                  <div
+                                    className="cmp-modal-backdrop"
+                                    role="dialog"
+                                    aria-modal="true"
+                                    onMouseDown={(e) => {
+                                      if (
+                                        e.target.classList.contains(
+                                          "cmp-modal-backdrop"
+                                        )
+                                      )
+                                        closeRejectModal();
+                                    }}
+                                  >
+                                    <div
+                                      className="cmp-modal"
+                                      style={{ maxWidth: 520 }}
+                                    >
+                                      <div className="header">
+                                        <h5 className="m-0">
+                                          Rejection Reason
+                                        </h5>
+                                      </div>
+                                      <div className="body">
+                                        <p className="mb-2">
+                                          Select reason(s) for rejection:
+                                        </p>
+                                        <div className="form-check">
+                                          <input
+                                            className="form-check-input"
+                                            type="checkbox"
+                                            id="rejQty"
+                                            checked={rejectModal.qty}
+                                            onChange={(e) =>
+                                              setRejectModal((m) => ({
+                                                ...m,
+                                                qty: e.target.checked,
+                                              }))
+                                            }
+                                          />
+                                          <label
+                                            className="form-check-label"
+                                            htmlFor="rejQty"
+                                          >
+                                            Insufficient Quantity
+                                          </label>
+                                        </div>
+                                        <div className="form-check">
+                                          <input
+                                            className="form-check-input"
+                                            type="checkbox"
+                                            id="rejQuality"
+                                            checked={rejectModal.quality}
+                                            onChange={(e) =>
+                                              setRejectModal((m) => ({
+                                                ...m,
+                                                quality: e.target.checked,
+                                              }))
+                                            }
+                                          />
+                                          <label
+                                            className="form-check-label"
+                                            htmlFor="rejQuality"
+                                          >
+                                            Insufficient Quality
+                                          </label>
+                                        </div>
+                                        <div className="form-text mt-2">
+                                          You may select one or both reasons.
+                                        </div>
+                                        <div className="mt-3">
+                                          <label
+                                            className="form-label"
+                                            htmlFor="rejComment"
+                                          >
+                                            Comment
+                                          </label>
+                                          <textarea
+                                            id="rejComment"
+                                            className="form-control"
+                                            rows={3}
+                                            value={rejectModal.comment}
+                                            onChange={(e) =>
+                                              setRejectModal((m) => ({
+                                                ...m,
+                                                comment: e.target.value,
+                                              }))
+                                            }
+                                            placeholder="Enter comment (optional)"
+                                          />
+                                        </div>
+                                      </div>
+                                      <div className="footer d-flex justify-content-end gap-2 mt-3">
+                                        <button
+                                          type="button"
+                                          className="btn btn-outline-secondary"
+                                          onClick={closeRejectModal}
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn btn-danger"
+                                          onClick={confirmRejectModal}
+                                          disabled={
+                                            !rejectModal.qty &&
+                                            !rejectModal.quality
+                                          }
+                                        >
+                                          Confirm Reject
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              );
-            })
+                        );
+                      })}
+                  </React.Fragment>
+                );
+              }
+            )
           )}
         </div>
       </section>

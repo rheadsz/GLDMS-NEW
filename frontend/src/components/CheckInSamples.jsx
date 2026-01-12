@@ -4,6 +4,8 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
   const SIDEBAR_OPEN_PX = 640;
   const SIDEBAR_CLOSED_PX = 0;
 
+  const ACTIVE_REQUEST_STORAGE_KEY = "gldms_checkin_samples_active_request";
+
   const [rows, setRows] = useState([]);
   const [active, setActive] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -75,9 +77,29 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
   }, [groupedByRequest]);
 
   useEffect(() => {
-    if (!active && requestSummaries.length > 0) {
-      setActive(requestSummaries[0]);
+    if (requestSummaries.length === 0) return;
+
+    const activeReqId = active?.RequestID ?? active?.RequestId;
+    const stillValid =
+      activeReqId != null &&
+      requestSummaries.some(
+        (r) => String(r.RequestID ?? r.RequestId) === String(activeReqId)
+      );
+    if (stillValid) return;
+
+    let desired = null;
+    try {
+      const saved = localStorage.getItem(ACTIVE_REQUEST_STORAGE_KEY);
+      if (saved != null) {
+        desired = requestSummaries.find(
+          (r) => String(r.RequestID ?? r.RequestId) === String(saved)
+        );
+      }
+    } catch {
+      // ignore storage errors
     }
+
+    setActive(desired ?? requestSummaries[0]);
   }, [requestSummaries, active]);
 
   const fmtDate = (d) => {
@@ -177,6 +199,14 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
   const handleSelectRequest = (reqRow) => {
     setActive(reqRow);
     // Do not reset editableSamples here; per-sample state persists across selection.
+    try {
+      const reqId = reqRow?.RequestID ?? reqRow?.RequestId;
+      if (reqId != null) {
+        localStorage.setItem(ACTIVE_REQUEST_STORAGE_KEY, String(reqId));
+      }
+    } catch {
+      // ignore storage errors
+    }
   };
 
   return (

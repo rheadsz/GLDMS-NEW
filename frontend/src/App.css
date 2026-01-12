@@ -46,18 +46,18 @@
   top: 0;
   z-index: 100;
   background: #fff;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
 }
 
 .sticky-site-header {
-  position: sticky;
-  top: 0;
-  z-index: 2000;
+  position: static;
+  top: auto;
+  z-index: auto;
   background: #fff;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
 }
 
 /* Add padding to main content when header is fixed */
 .main-content-with-fixed-header {
-  padding-top: 100px !important;
+  padding-top: 0 !important;
 }

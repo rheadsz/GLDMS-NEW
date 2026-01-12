@@ -9,8 +9,11 @@ function Header({ showSignOut, onSignOut, userName }) {
   };
 
   return (
-    <header className="sticky-site-header fixed-top">
-      <nav className="navbar navbar-expand-lg navbar-light bg-white shadow-sm border-bottom mb-3 p-0" style={{ minHeight: 72 }}>
+    <header className="sticky-site-header">
+      <nav
+        className="navbar navbar-expand-lg navbar-light bg-white shadow-sm border-bottom mb-3 p-0"
+        style={{ minHeight: 72 }}
+      >
         <div className="container-fluid d-flex align-items-center justify-content-between">
           <button
             type="button"
@@ -23,7 +26,10 @@ function Header({ showSignOut, onSignOut, userName }) {
               alt="Caltrans Logo"
               style={{ height: "48px", marginRight: "16px" }}
             />
-            <span className="fs-4 fw-bold" style={{ color: 'var(--caltrans-blue)' }}>
+            <span
+              className="fs-4 fw-bold"
+              style={{ color: "var(--caltrans-blue)" }}
+            >
               Geotechnical Lab Database Management System
             </span>
           </button>
@@ -50,4 +56,4 @@ function Header({ showSignOut, onSignOut, userName }) {
   );
 }
 
-export default Header; 
+export default Header;

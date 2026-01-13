@@ -762,7 +762,7 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                                           const k = rowKey(t, idx, sampleId);
                                           const rowUi = uiByTest[k] || {
                                             specimenCount: 1,
-                                            action: "Record Created",
+                                            action: null,
                                             actionDate: null,
                                           };
 

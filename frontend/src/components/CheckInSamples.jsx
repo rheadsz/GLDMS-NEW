@@ -4,6 +4,8 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
   const SIDEBAR_OPEN_PX = 640;
   const SIDEBAR_CLOSED_PX = 0;
 
+  const ACTIVE_REQUEST_STORAGE_KEY = "gldms_checkin_samples_active_request";
+
   const [rows, setRows] = useState([]);
   const [active, setActive] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -11,7 +13,10 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
   const [refreshTick, setRefreshTick] = useState(0);
   const [actionSavingId, setActionSavingId] = useState(null);
   const [actionMsg, setActionMsg] = useState("");
-  const [actionEditable, setActionEditable] = useState(false);
+  // Per-sample flag: is this row's Action dropdown currently editable?
+  // Default is true (editable) until an action is chosen, then it becomes false
+  // and can be re-enabled via the checkbox in that row.
+  const [editableSamples, setEditableSamples] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -72,9 +77,29 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
   }, [groupedByRequest]);
 
   useEffect(() => {
-    if (!active && requestSummaries.length > 0) {
-      setActive(requestSummaries[0]);
+    if (requestSummaries.length === 0) return;
+
+    const activeReqId = active?.RequestID ?? active?.RequestId;
+    const stillValid =
+      activeReqId != null &&
+      requestSummaries.some(
+        (r) => String(r.RequestID ?? r.RequestId) === String(activeReqId)
+      );
+    if (stillValid) return;
+
+    let desired = null;
+    try {
+      const saved = localStorage.getItem(ACTIVE_REQUEST_STORAGE_KEY);
+      if (saved != null) {
+        desired = requestSummaries.find(
+          (r) => String(r.RequestID ?? r.RequestId) === String(saved)
+        );
+      }
+    } catch {
+      // ignore storage errors
     }
+
+    setActive(desired ?? requestSummaries[0]);
   }, [requestSummaries, active]);
 
   const fmtDate = (d) => {
@@ -127,6 +152,11 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
       }
 
       setActionMsg(`Sample ${sampleId} set to ${action}.`);
+      // After a successful update, lock this row again (non-editable)
+      setEditableSamples((prev) => ({
+        ...prev,
+        [sampleId]: false,
+      }));
     } catch (e) {
       setActionMsg(e.message || "Update failed.");
     } finally {
@@ -168,7 +198,15 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
 
   const handleSelectRequest = (reqRow) => {
     setActive(reqRow);
-    setActionEditable(false);
+    // Do not reset editableSamples here; per-sample state persists across selection.
+    try {
+      const reqId = reqRow?.RequestID ?? reqRow?.RequestId;
+      if (reqId != null) {
+        localStorage.setItem(ACTIVE_REQUEST_STORAGE_KEY, String(reqId));
+      }
+    } catch {
+      // ignore storage errors
+    }
   };
 
   return (
@@ -291,17 +329,6 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
             <div className="text-muted">Select a request to view details.</div>
           ) : (
             <>
-              <div className="d-flex align-items-center gap-2 mb-2">
-                <button
-                  className="btn btn-sm btn-outline-primary"
-                  onClick={() => setRefreshTick((n) => n + 1)}
-                  disabled={loading}
-                  title="Refetch latest data"
-                >
-                  Refresh
-                </button>
-              </div>
-
               <div className="table-responsive">
                 <table className="table table-bordered table-sm mb-0">
                   <tbody>
@@ -352,19 +379,45 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                               {/* Column labels row (per borehole group) */}
                               {isOpen && (
                                 <tr className="table-light">
+                                  <th
+                                    style={{
+                                      width: "2.25rem",
+                                      textAlign: "center",
+                                    }}
+                                  >
+                                    {/* per-sample checkbox column */}
+                                  </th>
                                   <th>Sample No.</th>
                                   <th>Depth From</th>
                                   <th>Depth To</th>
                                   <th>Container Type</th>
                                   <th>Field Collection Date</th>
-                                  <th>Action</th>
-                                  <th>Status</th>
+                                  <th>Action/Status</th>
                                 </tr>
                               )}
                               {/* Sample rows for this borehole */}
                               {isOpen &&
                                 list.map((s) => (
                                   <tr key={s.SampleID}>
+                                    <td className="text-center">
+                                      <input
+                                        type="checkbox"
+                                        className="form-check-input"
+                                        checked={
+                                          editableSamples[s.SampleID] ?? true
+                                        }
+                                        onChange={() => {
+                                          setEditableSamples((prev) => {
+                                            const current =
+                                              prev[s.SampleID] ?? true;
+                                            return {
+                                              ...prev,
+                                              [s.SampleID]: !current,
+                                            };
+                                          });
+                                        }}
+                                      />
+                                    </td>
                                     <td>
                                       {s.SampleNumber ?? s.SampleID ?? "—"}
                                     </td>
@@ -376,7 +429,10 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                                       <select
                                         className="form-select form-select-sm"
                                         value={s.ActionStatus ?? ""}
-                                        disabled={actionSavingId === s.SampleID}
+                                        disabled={
+                                          actionSavingId === s.SampleID ||
+                                          !(editableSamples[s.SampleID] ?? true)
+                                        }
                                         onChange={(e) => {
                                           const label = e.target.value;
                                           updateSampleAction(s.SampleID, label);
@@ -393,12 +449,6 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                                           Not Received
                                         </option>
                                       </select>
-                                    </td>
-                                    <td>
-                                      {s.ActionStatus &&
-                                      String(s.ActionStatus).trim() !== ""
-                                        ? s.ActionStatus
-                                        : "Shipped"}
                                     </td>
                                   </tr>
                                 ))}

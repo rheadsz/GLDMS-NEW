@@ -22,7 +22,25 @@ function AppWithSidebar() {
     { key: "staff", label: "Lab Management" }, // renamed
   ];
 
-  const [activeTab, setActiveTab] = useState("samples");
+  const ACTIVE_TAB_STORAGE_KEY = "gldms_manage_requests_active_tab";
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const raw = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+      const key = raw == null ? "samples" : String(raw);
+      const ok = TAB_CONFIG.some((t) => t.key === key);
+      return ok ? key : "samples";
+    } catch {
+      return "samples";
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, String(activeTab));
+    } catch {
+      // ignore storage errors
+    }
+  }, [activeTab]);
 
   // GLOBAL hamburger for all tabs
   const [sidebarOpen, setSidebarOpen] = useState(true);

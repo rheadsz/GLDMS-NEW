@@ -5,6 +5,10 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
   const SIDEBAR_OPEN_PX = 640;
   const SIDEBAR_CLOSED_PX = 0;
 
+  const ACTIVE_REQUEST_STORAGE_KEY = "gldms_checkin_requests_active_request";
+  const OPEN_SAMPLES_STORAGE_KEY_PREFIX =
+    "gldms_checkin_requests_open_samples:";
+
   const [rows, setRows] = useState([]);
   const [active, setActive] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -15,18 +19,24 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
 
   // uiByTest[k] = { specimenCount, action, actionDate }
   const [uiByTest, setUiByTest] = useState({});
-  const [selectedKeys, setSelectedKeys] = useState(new Set());
+  // Per-test editability (checkbox-driven). Default is editable (true) until a status
+  // is selected, then it becomes locked (false) until user checks the box again.
+  const [editableTests, setEditableTests] = useState({});
   const [rejectModal, setRejectModal] = useState({
     open: false,
     key: null,
     prevAction: null,
     qty: false,
     quality: false,
+    comment: "",
   });
 
-  // Edit flow + autosave
-  const [isEditing, setIsEditing] = useState(false);
-  const [userEdited, setUserEdited] = useState(false);
+  // Collapsible details per sample on the right side (allow multiple open)
+  const [openSamples, setOpenSamples] = useState({});
+
+  const activeRequestId = useMemo(() => {
+    return active?.RequestID ?? active?.RequestId ?? null;
+  }, [active]);
 
   // Track focused editable controls to avoid mid-change autosaves
   const focusCountRef = useRef(0);
@@ -44,8 +54,6 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     setActive(null);
     setUiByTest({});
     setSaveMsg("");
-    setIsEditing(false);
-    setUserEdited(false);
     focusCountRef.current = 0;
     setHasFocusedEditor(false);
 
@@ -88,50 +96,129 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     return arr.sort((a, b) => (b.SampleID ?? 0) - (a.SampleID ?? 0));
   }, [groupedBySample]);
 
-  useEffect(() => {
-    if (!active && sampleSummaries.length > 0) {
-      setActive(sampleSummaries[0]);
+  // Unique requests for the left sidebar (one row per RequestID)
+  const requestSummaries = useMemo(() => {
+    const byReq = new Map();
+    for (const s of sampleSummaries) {
+      const key = s.RequestID ?? s.RequestId;
+      if (!key) continue;
+      if (!byReq.has(key)) byReq.set(key, s); // first sample represents the request
     }
+    return Array.from(byReq.values()).sort(
+      (a, b) =>
+        (b.RequestID ?? b.RequestId ?? 0) - (a.RequestID ?? a.RequestId ?? 0)
+    );
+  }, [sampleSummaries]);
+
+  // All samples that belong to the same request as the active sample
+  const samplesForActiveRequest = useMemo(() => {
+    if (!active) return [];
+    const reqId = active.RequestID ?? active.RequestId;
+    if (!reqId) return [];
+    return sampleSummaries.filter(
+      (s) => String(s.RequestID ?? s.RequestId) === String(reqId)
+    );
   }, [sampleSummaries, active]);
 
-  const activeTests = useMemo(() => {
-    if (!active) return [];
-    return groupedBySample.get(active.SampleID) || [];
-  }, [active, groupedBySample]);
+  const groupedByBorehole = useMemo(() => {
+    const map = new Map();
+    for (const s of samplesForActiveRequest) {
+      const key = s.BoreholeID ?? "(no borehole)";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(s);
+    }
+    return map;
+  }, [samplesForActiveRequest]);
 
-  // Stable key
-  const rowKey = (t, idx) =>
-    t.TestID ??
-    t.TestRequestID ??
-    `${active?.SampleID ?? "sample"}-${t.TestName ?? "test"}-${idx}`;
-
-  // Seed UI from DB values (not a user edit)
-  const seedUiFromDB = () => {
-    setUiByTest((prev) => {
-      const next = {};
-      activeTests.forEach((t, idx) => {
-        const k = rowKey(t, idx);
-        next[k] = prev[k] ?? {
-          specimenCount:
-            typeof t.NumberOfSpecimen === "number" ? t.NumberOfSpecimen : 1,
-          action: t.TestStatus ?? "Record Created",
-          actionDate: null, // set only when user changes action
-        };
-      });
-      return next;
-    });
-    setUserEdited(false);
-    setSaveMsg("");
+  const [openBoreholes, setOpenBoreholes] = useState({});
+  const toggleBorehole = (key) => {
+    setOpenBoreholes((prev) => ({
+      ...prev,
+      [key]: !(prev && Object.prototype.hasOwnProperty.call(prev, key)
+        ? prev[key]
+        : true),
+    }));
   };
 
   useEffect(() => {
-    seedUiFromDB();
+    if (requestSummaries.length === 0) return;
+
+    const activeReqId = active?.RequestID ?? active?.RequestId;
+    const stillValid =
+      activeReqId != null &&
+      requestSummaries.some(
+        (r) => String(r.RequestID ?? r.RequestId) === String(activeReqId)
+      );
+    if (stillValid) return;
+
+    let desired = null;
+    try {
+      const saved = localStorage.getItem(ACTIVE_REQUEST_STORAGE_KEY);
+      if (saved != null) {
+        desired = requestSummaries.find(
+          (r) => String(r.RequestID ?? r.RequestId) === String(saved)
+        );
+      }
+    } catch {
+      // ignore storage errors
+    }
+
+    setActive(desired ?? requestSummaries[0]);
+  }, [requestSummaries, active]);
+
+  // Restore expanded sample sections for the active request
+  useEffect(() => {
+    if (!activeRequestId) return;
+    try {
+      const raw = localStorage.getItem(
+        `${OPEN_SAMPLES_STORAGE_KEY_PREFIX}${String(activeRequestId)}`
+      );
+      if (!raw) {
+        setOpenSamples({});
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        setOpenSamples({});
+        return;
+      }
+      const next = {};
+      parsed.forEach((id) => {
+        next[id] = true;
+      });
+      setOpenSamples(next);
+    } catch {
+      setOpenSamples({});
+    }
+  }, [activeRequestId]);
+
+  // Persist expanded sample sections for the active request
+  useEffect(() => {
+    if (!activeRequestId) return;
+    try {
+      const openIds = Object.keys(openSamples).filter((k) => openSamples[k]);
+      localStorage.setItem(
+        `${OPEN_SAMPLES_STORAGE_KEY_PREFIX}${String(activeRequestId)}`,
+        JSON.stringify(openIds)
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [openSamples, activeRequestId]);
+
+  // Stable key
+  const rowKey = (t, idx, sampleId) =>
+    t.TestID ??
+    t.TestRequestID ??
+    `${sampleId ?? "sample"}-${t.TestName ?? "test"}-${idx}`;
+
+  // Seed UI from DB values (not a user edit)
+  useEffect(() => {
     originalUiSnapshotRef.current = {};
-    // reset focus tracking when sample/tests change
+    // reset focus tracking when data changes
     focusCountRef.current = 0;
     setHasFocusedEditor(false);
-    setSelectedKeys(new Set());
-  }, [activeTests]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const statusTextClass = (status) => {
     if (!status) return "text-muted";
@@ -157,107 +244,16 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     }
   };
 
-  // AUTOSAVE: only when editing, there are changes, and no editor is focused
-  useEffect(() => {
-    if (!isEditing || !userEdited || activeTests.length === 0) return;
-    if (hasFocusedEditor) return; // don't save mid-interaction
-
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      void saveActiveSample(/*fromAutosave*/ true);
-    }, 800);
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uiByTest, userEdited, isEditing, hasFocusedEditor, active?.SampleID]);
-
-  // Save current edits (manual or autosave)
-  const saveActiveSample = async (fromAutosave = false) => {
-    if (!active) return;
-    if (!userEdited) {
-      if (!fromAutosave) {
-        setIsEditing(false);
-        setSaveMsg("No changes.");
-      }
-      return;
-    }
-
-    const updates = activeTests
-      .map((t, idx) => {
-        const k = rowKey(t, idx);
-        const u = uiByTest[k] || {};
-        return {
-          TestID: t.TestID,
-          TestStatus: u.action ?? null,
-          NumberOfSpecimen:
-            typeof u.specimenCount === "number" ? u.specimenCount : null,
-          // If Action changed in this session, we have a local YYYY-MM-DD; else keep DB value
-          DateAssigned: u.actionDate ? u.actionDate : t.DateAssigned ?? null,
-        };
-      })
-      .filter((u) => typeof u.TestID !== "undefined" && u.TestID !== null);
-
-    setSaving(true);
-    setErr(null);
-    setSaveMsg("");
-    try {
-      const r = await fetch("/api/supervisor/request-samples/update-tests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ updates }),
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
-
-      setSaveMsg(`All changes saved${data.count ? ` (${data.count})` : ""}.`);
-      setUserEdited(false);
-
-      // Per your flow: after autosave completes, show display (view) again
-      setIsEditing(false);
-
-      // Optionally fetch updated rows if you want to re-pull DateAssigned from DB
-      // const reload = await fetch("/api/supervisor/request-samples");
-      // const all = await reload.json();
-      // const filtered = requestId
-      //   ? all.filter((r) => String(r.RequestID) === String(requestId))
-      //   : all;
-      // setRows(filtered);
-    } catch (e) {
-      setErr(e.message || "Failed to save.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Begin/Cancel edit
-  const beginEdit = () => {
-    originalUiSnapshotRef.current = JSON.parse(JSON.stringify(uiByTest));
-    setIsEditing(true);
-    setSaveMsg("");
-    setErr(null);
-    setUserEdited(false);
-  };
-  const cancelEdit = () => {
-    const snap = originalUiSnapshotRef.current || {};
-    if (Object.keys(snap).length) setUiByTest(snap);
-    else seedUiFromDB();
-    setIsEditing(false);
-    setUserEdited(false);
-    setSaveMsg("Changes discarded.");
-    // clear any pending autosave
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-  };
-
   // Reject modal helpers (top-level)
-  const openRejectModal = (key, prevAction) => {
+  const openRejectModal = (key, prevAction, test) => {
     setRejectModal({
       open: true,
       key,
       prevAction: prevAction || null,
+      test: test || null,
       qty: false,
       quality: false,
+      comment: "",
     });
   };
   const closeRejectModal = () => {
@@ -265,8 +261,10 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
       open: false,
       key: null,
       prevAction: null,
+      test: null,
       qty: false,
       quality: false,
+      comment: "",
     });
   };
   const confirmRejectModal = () => {
@@ -274,20 +272,30 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     const reasons = [];
     if (rejectModal.qty) reasons.push("Insufficient Quantity");
     if (rejectModal.quality) reasons.push("Insufficient Quality");
+    const comment = String(rejectModal.comment || "").trim();
+    if (comment) reasons.push(`Comment: ${comment}`);
     if (reasons.length === 0) return; // require at least one
-    const today = new Date().toLocaleDateString("en-CA");
+
+    const ok = window.confirm("Are you sure you want to save changes?");
+    if (!ok) {
+      closeRejectModal();
+      return;
+    }
+
+    // Persist immediately (no edit mode)
+    const key = rejectModal.key;
+    const test = rejectModal.test;
     setUiByTest((prev) => ({
       ...prev,
-      [rejectModal.key]: {
-        ...(prev[rejectModal.key] || {}),
+      [key]: {
+        ...(prev[key] || {}),
         action: "Rejected",
-        actionDate: today,
+        actionDate: new Date().toLocaleDateString("en-CA"),
         rejectReasons: reasons,
       },
     }));
-    setUserEdited(true);
-    setSaveMsg("");
     closeRejectModal();
+    void updateSingleTest(key, test, "Rejected");
   };
 
   // Helpers to track focus/blur for each editable control
@@ -303,52 +311,61 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
     // no immediate save here — effect will run and debounce after blur
   };
 
-  // Selection helpers
-  const allRowKeys = useMemo(
-    () => activeTests.map((t, idx) => rowKey(t, idx)),
-    [activeTests]
-  );
-  const allSelected = useMemo(
-    () => allRowKeys.length > 0 && allRowKeys.every((k) => selectedKeys.has(k)),
-    [allRowKeys, selectedKeys]
-  );
-  const toggleAll = () => {
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      const every = allRowKeys.every((k) => next.has(k));
-      if (every) allRowKeys.forEach((k) => next.delete(k));
-      else allRowKeys.forEach((k) => next.add(k));
-      return next;
-    });
-  };
-  const toggleOne = (k) => {
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(k)) next.delete(k);
-      else next.add(k);
-      return next;
-    });
-  };
+  // Selection/bulk helpers removed (no bulk actions in dropdown-only mode).
 
-  // Bulk apply action to selected
-  const applyBulkAction = (label) => {
-    if (!isEditing || selectedKeys.size === 0) return;
+  // Inline update (no edit mode): update a single test row immediately
+  const updateSingleTest = async (rowKeyStr, test, nextStatus) => {
+    if (!test?.TestID) return;
+
     const today = new Date().toLocaleDateString("en-CA");
-    setUiByTest((prev) => {
-      const next = { ...prev };
-      selectedKeys.forEach((k) => {
-        next[k] = {
-          ...(next[k] || {}),
-          action: label,
-          actionDate: today,
-        };
-      });
-      return next;
-    });
-    setUserEdited(true);
-    setSaveMsg("");
-  };
+    const prevUi = uiByTest[rowKeyStr] || {};
 
+    const updates = [
+      {
+        TestID: test.TestID,
+        TestStatus: nextStatus ?? null,
+        NumberOfSpecimen:
+          typeof prevUi.specimenCount === "number"
+            ? prevUi.specimenCount
+            : null,
+        DateAssigned: today,
+      },
+    ];
+
+    setSaving(true);
+    setErr(null);
+    setSaveMsg("");
+    try {
+      const r = await fetch("/api/supervisor/request-samples/update-tests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ updates }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
+
+      setUiByTest((prev) => ({
+        ...prev,
+        [rowKeyStr]: {
+          ...(prev[rowKeyStr] || {}),
+          action: nextStatus,
+          actionDate: today,
+        },
+      }));
+
+      // After a successful update, lock this row again (non-editable)
+      setEditableTests((prev) => ({
+        ...prev,
+        [rowKeyStr]: false,
+      }));
+
+      setSaveMsg(`Saved${data.count ? ` (${data.count})` : ""}.`);
+    } catch (e) {
+      setErr(e.message || "Failed to save.");
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
     <div className="lm-main d-flex">
       <style>{`
@@ -397,6 +414,38 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
         /* Tighter tests table */
         .tbl-tests { table-layout: fixed; }
         .tbl-tests th, .tbl-tests td { padding: 6px 8px !important; }
+
+        .cmp-modal-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.45);
+          z-index: 2000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 16px;
+        }
+        .cmp-modal {
+          background: #fff;
+          border-radius: 8px;
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+          width: 100%;
+          max-width: 520px;
+          max-height: calc(100vh - 32px);
+          overflow: auto;
+          border: 1px solid rgba(0, 0, 0, 0.12);
+        }
+        .cmp-modal .header {
+          padding: 12px 16px;
+          border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        }
+        .cmp-modal .body {
+          padding: 12px 16px;
+        }
+        .cmp-modal .footer {
+          padding: 12px 16px;
+          border-top: 1px solid rgba(0, 0, 0, 0.08);
+        }
       `}</style>
 
       {/* LEFT: Samples list */}
@@ -432,52 +481,71 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
                     {err}
                   </td>
                 </tr>
-              ) : sampleSummaries.length === 0 ? (
+              ) : requestSummaries.length === 0 ? (
                 <tr>
                   <td colSpan={3} className="text-muted text-center py-4">
-                    No samples.
+                    No requests.
                   </td>
                 </tr>
               ) : (
-                sampleSummaries.map((s) => {
+                requestSummaries.map((r) => {
                   const isActive =
-                    (active?.SampleID ?? active?.id) === (s.SampleID ?? s.id);
+                    String(active?.RequestID ?? active?.RequestId) ===
+                    String(r.RequestID ?? r.RequestId);
                   return (
                     <tr
-                      key={s.SampleID ?? `${s.EfisProjectID}-${s.CreatedBy}`}
+                      key={r.RequestID ?? `${r.EfisProjectID}-${r.CreatedBy}`}
                       className={isActive ? "table-primary" : ""}
                       style={{ cursor: "pointer" }}
                       onClick={() => {
-                        setActive(s);
+                        setActive(r);
                         setUiByTest({});
                         setSaveMsg("");
-                        setIsEditing(false);
-                        setUserEdited(false);
                         focusCountRef.current = 0;
                         setHasFocusedEditor(false);
+                        try {
+                          const reqId = r?.RequestID ?? r?.RequestId;
+                          if (reqId != null) {
+                            localStorage.setItem(
+                              ACTIVE_REQUEST_STORAGE_KEY,
+                              String(reqId)
+                            );
+                          }
+                        } catch {
+                          // ignore storage errors
+                        }
                       }}
                       tabIndex={0}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          setActive(s);
+                          setActive(r);
                           setUiByTest({});
                           setSaveMsg("");
-                          setIsEditing(false);
-                          setUserEdited(false);
                           focusCountRef.current = 0;
                           setHasFocusedEditor(false);
+                          try {
+                            const reqId = r?.RequestID ?? r?.RequestId;
+                            if (reqId != null) {
+                              localStorage.setItem(
+                                ACTIVE_REQUEST_STORAGE_KEY,
+                                String(reqId)
+                              );
+                            }
+                          } catch {
+                            // ignore storage errors
+                          }
                         }
                       }}
                       aria-selected={isActive}
                     >
                       <td className="mono text-start">
-                        <span className="linklike">{s.RequestID ?? "—"}</span>
+                        <span className="linklike">{r.RequestID ?? "—"}</span>
                       </td>
                       <td className="mono text-start">
-                        {s.EfisProjectID ?? "—"}
+                        {r.EfisProjectID ?? "—"}
                       </td>
-                      <td className="text-start">{s.CreatedBy ?? "—"}</td>
+                      <td className="text-start">{r.CreatedBy ?? "—"}</td>
                     </tr>
                   );
                 })
@@ -504,352 +572,423 @@ export default function SamplesDetails({ requestId, sidebarOpen = true }) {
             <div className="text-muted">
               Select a sample to view its details.
             </div>
+          ) : samplesForActiveRequest.length === 0 ? (
+            <div className="text-muted">No samples for this request.</div>
           ) : (
-            <>
-              {/* Summary header */}
-              <div className="summary-line">
-                <div>
-                  <span className="label">Request No.:</span>
-                  <span className="value mono">{active.RequestID ?? "—"}</span>
-                </div>
-                <div>
-                  <span className="label">Sample No.:</span>
-                  <span className="value mono">
-                    {active.SampleNumber ?? active.SampleID ?? "—"}
-                  </span>
-                </div>
-                <div>
-                  <span className="label">Project ID:</span>
-                  <span className="value mono">
-                    {active.EfisProjectID ?? "—"}
-                  </span>
-                </div>
-                <div>
-                  <span className="label">Submitter:</span>
-                  <span className="value" style={{ color: "#b30000" }}>
-                    {active.CreatedBy ?? "—"}
-                  </span>
-                </div>
-              </div>
+            Array.from(groupedByBorehole.entries()).map(
+              ([boreholeId, list]) => {
+                const key = String(boreholeId);
+                const isBoreholeOpen =
+                  openBoreholes &&
+                  Object.prototype.hasOwnProperty.call(openBoreholes, key)
+                    ? openBoreholes[key]
+                    : true;
 
-              {/* Controls + status */}
-              <div className="d-flex align-items-center gap-2 mt-3">
-                {!isEditing ? (
-                  <button
-                    className="btn btn-sm btn-primary"
-                    onClick={beginEdit}
-                    disabled={saving || selectedKeys.size === 0}
-                    title={
-                      selectedKeys.size === 0
-                        ? "Select at least one test to enable editing"
-                        : "Enter edit mode"
-                    }
-                  >
-                    Edit
-                  </button>
-                ) : (
-                  <button
-                    className="btn btn-sm btn-outline-secondary"
-                    onClick={cancelEdit}
-                    disabled={saving}
-                  >
-                    Cancel
-                  </button>
-                )}
-                <button
-                  className="btn btn-sm btn-outline-primary"
-                  onClick={() => setRefreshTick((n) => n + 1)}
-                  disabled={loading || saving}
-                  title="Refetch latest tests for samples"
-                >
-                  Refresh
-                </button>
-                <span className="text-muted small">
-                  {saving
-                    ? "Saving…"
-                    : isEditing && (userEdited || hasFocusedEditor)
-                    ? "Editing…"
-                    : saveMsg
-                    ? saveMsg
-                    : isEditing
-                    ? "Edit mode"
-                    : loading
-                    ? "Loading…"
-                    : "View mode"}
-                </span>
-                {err && <span className="text-danger small">{err}</span>}
-              </div>
-
-              {/* TABLE 1: Borehole / field collection details */}
-              <div className="table-responsive mt-3">
-                <table className="table table-bordered table-sm mb-0">
-                  <thead className="table-light">
-                    <tr>
-                      <th>Borehole ID</th>
-                      <th>Depth From</th>
-                      <th>Depth To</th>
-                      <th>Container Type</th>
-                      <th>Field Collection Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>{active.BoreholeID ?? "—"}</td>
-                      <td>{active.DepthFrom ?? "—"}</td>
-                      <td>{active.DepthTo ?? "—"}</td>
-                      <td>{active.ContainerType ?? "—"}</td>
-                      <td>{fmtDate(active.FieldCollectionDate)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {/* TABLE 2: Requested tests / check-in status */}
-              <div className="table-responsive mt-3">
-                <table className="table table-bordered table-sm mb-0">
-                  <thead className="table-light">
-                    <tr>
-                      <th style={{ width: "2.25rem", textAlign: "center" }}>
-                        <input
-                          type="checkbox"
-                          className="form-check-input"
-                          checked={allSelected}
-                          onChange={toggleAll}
-                          aria-label="Select all tests"
-                        />
-                      </th>
-                      <th>Requested Test</th>
-                      <th style={{ width: "6rem" }}>Number of Specimen</th>
-                      <th>Status</th>
-                      <th>Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activeTests.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="text-center text-muted">
-                          No tests for this sample.
-                        </td>
-                      </tr>
-                    ) : (
-                      activeTests.map((t, idx) => {
-                        const k = rowKey(t, idx);
-                        const rowUi = uiByTest[k] || {
-                          specimenCount: 1,
-                          action: "Record Created",
-                          actionDate: null,
-                        };
-
-                        // Prefer DB DateAssigned (YYYY-MM-DD), fallback to local actionDate (YYYY-MM-DD)
-                        const displayDate = t.DateAssigned || rowUi.actionDate;
-
-                        const isSelected = selectedKeys.has(k);
-                        // Underlying status from DB or UI; fallback to null
-                        const rawStatus = rowUi.action || t.TestStatus || null;
-                        let displayStatus = rawStatus;
-                        if (!displayStatus) displayStatus = "Requested";
-                        // While in edit mode, if row not selected, show Requested
-                        if (isEditing && !isSelected) {
-                          displayStatus = "Requested";
-                        } else if (!isEditing && displayStatus === "Accepted") {
-                          // View mode mapping: Accepted -> Checked-in
-                          displayStatus = "Checked-in";
+                return (
+                  <React.Fragment key={key}>
+                    <div
+                      className="border rounded px-3 py-2 mb-2 bg-light"
+                      style={{ cursor: "pointer" }}
+                      onClick={() => toggleBorehole(key)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          toggleBorehole(key);
                         }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={isBoreholeOpen}
+                    >
+                      <span style={{ marginRight: 8 }}>
+                        {isBoreholeOpen ? "▾" : "▸"}
+                      </span>
+                      <strong>Borehole ID:</strong> {boreholeId ?? "—"}
+                    </div>
+
+                    {isBoreholeOpen &&
+                      list.map((s) => {
+                        const sampleId = s.SampleID ?? s.id;
+                        const isOpen = openSamples[sampleId] ?? false;
+                        const headerSampleNumber =
+                          s.SampleNumber ?? s.SampleID ?? "—";
+                        const headerDepthFrom = s.DepthFrom ?? "—";
+                        const headerDepthTo = s.DepthTo ?? "—";
+                        const headerContainer = s.ContainerType ?? "—";
+                        const sampleTests = groupedBySample.get(sampleId) || [];
 
                         return (
-                          <tr key={k}>
-                            <td className="text-center">
-                              <input
-                                type="checkbox"
-                                className="form-check-input"
-                                checked={isSelected}
-                                onChange={() => toggleOne(k)}
-                                aria-label={`Select test ${t.TestName ?? ""}`}
-                              />
-                            </td>
-                            <td>{t.TestName ?? "—"}</td>
-
-                            <td style={{ maxWidth: 96 }}>
-                              {isEditing ? (
-                                <select
-                                  className="form-select form-select-sm"
-                                  value={rowUi.specimenCount}
-                                  onFocus={handleFocus}
-                                  onBlur={handleBlur}
-                                  onChange={(e) => {
-                                    setUiByTest((prev) => ({
-                                      ...prev,
-                                      [k]: {
-                                        ...prev[k],
-                                        specimenCount:
-                                          Number(e.target.value) || 1,
-                                      },
-                                    }));
-                                    setUserEdited(true);
-                                    setSaveMsg("");
-                                  }}
-                                >
-                                  {[1, 2, 3, 4, 5].map((n) => (
-                                    <option key={n} value={n}>
-                                      {n}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <span className="mono">
-                                  {rowUi.specimenCount}
+                          <div
+                            key={
+                              s.SampleID ?? `${s.EfisProjectID}-${s.CreatedBy}`
+                            }
+                            className="mb-3 ms-3"
+                          >
+                            <div
+                              className="d-flex align-items-center justify-content-between border rounded px-3 py-2 bg-white"
+                              style={{ cursor: "pointer" }}
+                              onClick={() => {
+                                setOpenSamples((prev) => ({
+                                  ...prev,
+                                  [sampleId]: !(prev[sampleId] ?? false),
+                                }));
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setOpenSamples((prev) => ({
+                                    ...prev,
+                                    [sampleId]: !(prev[sampleId] ?? false),
+                                  }));
+                                }
+                              }}
+                              role="button"
+                              tabIndex={0}
+                              aria-expanded={isOpen}
+                            >
+                              <div className="d-flex align-items-center gap-2">
+                                <span style={{ fontSize: 18 }}>
+                                  {isOpen ? "▾" : "▸"}
                                 </span>
-                              )}
-                            </td>
+                                <div className="fw-semibold">
+                                  {`Sample ${headerSampleNumber} (${headerDepthFrom}-${headerDepthTo}) : ${headerContainer}`}
+                                </div>
+                              </div>
+                            </div>
 
-                            {/* Status (editable in place) */}
-                            <td>
-                              {isEditing && isSelected ? (
-                                <select
-                                  className="form-select form-select-sm"
-                                  value={
-                                    [
-                                      "Accepted",
-                                      "Rejected",
-                                      "Not Received",
-                                    ].includes(
-                                      String(rowUi.action || t.TestStatus || "")
-                                    )
-                                      ? String(rowUi.action || t.TestStatus)
-                                      : ""
-                                  }
-                                  onFocus={handleFocus}
-                                  onBlur={handleBlur}
-                                  onChange={(e) => {
-                                    const val = e.target.value || null;
-                                    const prevVal = String(
-                                      rowUi.action || t.TestStatus || ""
-                                    );
-                                    if (
-                                      val === "Rejected" ||
-                                      val === "Reject"
-                                    ) {
-                                      // Open modal, do not apply change yet
-                                      openRejectModal(k, prevVal);
-                                      return;
-                                    }
-                                    setUiByTest((prev) => ({
-                                      ...prev,
-                                      [k]: {
-                                        ...prev[k],
-                                        action: val,
-                                        actionDate:
-                                          new Date().toLocaleDateString(
-                                            "en-CA"
-                                          ),
-                                        // clear reject reasons if not rejected
-                                        ...(val !== "Rejected"
-                                          ? { rejectReasons: [] }
-                                          : {}),
-                                      },
-                                    }));
-                                    setUserEdited(true);
-                                    setSaveMsg("");
-                                  }}
-                                >
-                                  <option value="">— Select —</option>
-                                  <option value="Accepted">Checked-in</option>
-                                  <option>Reject</option>
-                                  <option>Not Received</option>
-                                </select>
-                              ) : (
-                                <span className={statusTextClass(rawStatus)}>
-                                  {displayStatus}
-                                </span>
-                              )}
-                            </td>
+                            {isOpen && (
+                              <div className="ms-3">
+                                <div className="d-flex align-items-center mt-3">
+                                  <span className="ms-auto small text-muted">
+                                    {saving
+                                      ? "Saving…"
+                                      : saveMsg
+                                      ? saveMsg
+                                      : loading
+                                      ? "Loading…"
+                                      : ""}
+                                  </span>
+                                  {err && (
+                                    <span className="text-danger small ms-2">
+                                      {err}
+                                    </span>
+                                  )}
+                                </div>
 
-                            <td>{displayDate ? fmtDate(displayDate) : "—"}</td>
-                          </tr>
+                                <div className="table-responsive mt-3">
+                                  <table className="table table-bordered table-sm mb-0">
+                                    <thead className="table-light">
+                                      <tr>
+                                        <th
+                                          style={{
+                                            width: "2.25rem",
+                                            textAlign: "center",
+                                          }}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            className="form-check-input"
+                                            checked={
+                                              sampleTests.length === 0
+                                                ? false
+                                                : sampleTests
+                                                    .map((t, idx) =>
+                                                      rowKey(t, idx, sampleId)
+                                                    )
+                                                    .every(
+                                                      (k) =>
+                                                        (editableTests[k] ??
+                                                          true) === true
+                                                    )
+                                            }
+                                            ref={(el) => {
+                                              if (!el) return;
+                                              const keys = sampleTests.map(
+                                                (t, idx) =>
+                                                  rowKey(t, idx, sampleId)
+                                              );
+                                              const allChecked =
+                                                keys.length > 0 &&
+                                                keys.every(
+                                                  (k) =>
+                                                    (editableTests[k] ??
+                                                      true) === true
+                                                );
+                                              const someChecked = keys.some(
+                                                (k) =>
+                                                  (editableTests[k] ?? true) ===
+                                                  true
+                                              );
+                                              el.indeterminate =
+                                                !allChecked && someChecked;
+                                            }}
+                                            onChange={(e) => {
+                                              const next = e.target.checked;
+                                              const keys = sampleTests.map(
+                                                (t, idx) =>
+                                                  rowKey(t, idx, sampleId)
+                                              );
+                                              setEditableTests((prev) => {
+                                                const out = { ...prev };
+                                                keys.forEach((k) => {
+                                                  out[k] = next;
+                                                });
+                                                return out;
+                                              });
+                                            }}
+                                            disabled={sampleTests.length === 0}
+                                            aria-label="Select all tests"
+                                          />
+                                        </th>
+                                        <th>Requested Test</th>
+                                        <th style={{ width: "6rem" }}>
+                                          Number of Specimen
+                                        </th>
+                                        <th>Status</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {sampleTests.length === 0 ? (
+                                        <tr>
+                                          <td
+                                            colSpan={4}
+                                            className="text-center text-muted"
+                                          >
+                                            No tests for this sample.
+                                          </td>
+                                        </tr>
+                                      ) : (
+                                        sampleTests.map((t, idx) => {
+                                          const k = rowKey(t, idx, sampleId);
+                                          const rowUi = uiByTest[k] || {
+                                            specimenCount: 1,
+                                            action: null,
+                                            actionDate: null,
+                                          };
+
+                                          const rawStatus =
+                                            rowUi.action ||
+                                            t.TestStatus ||
+                                            null;
+
+                                          const isEditable =
+                                            editableTests[k] ?? true;
+
+                                          return (
+                                            <tr key={k}>
+                                              <td className="text-center">
+                                                <input
+                                                  type="checkbox"
+                                                  className="form-check-input"
+                                                  checked={isEditable}
+                                                  onChange={() => {
+                                                    setEditableTests(
+                                                      (prev) => ({
+                                                        ...prev,
+                                                        [k]: !(prev[k] ?? true),
+                                                      })
+                                                    );
+                                                  }}
+                                                  aria-label={`Enable editing for test ${
+                                                    t.TestName ?? ""
+                                                  }`}
+                                                />
+                                              </td>
+                                              <td>{t.TestName ?? "—"}</td>
+                                              <td style={{ maxWidth: 96 }}>
+                                                <span className="mono">
+                                                  {rowUi.specimenCount}
+                                                </span>
+                                              </td>
+                                              <td>
+                                                <select
+                                                  className="form-select form-select-sm"
+                                                  value={
+                                                    [
+                                                      "Accepted",
+                                                      "Rejected",
+                                                      "Not Received",
+                                                    ].includes(
+                                                      String(rawStatus ?? "")
+                                                    )
+                                                      ? String(rawStatus)
+                                                      : ""
+                                                  }
+                                                  disabled={
+                                                    saving || !isEditable
+                                                  }
+                                                  onChange={(e) => {
+                                                    const val =
+                                                      e.target.value || null;
+                                                    const prevVal = String(
+                                                      rawStatus ?? ""
+                                                    );
+                                                    if (val === "Rejected") {
+                                                      openRejectModal(
+                                                        k,
+                                                        prevVal,
+                                                        t
+                                                      );
+                                                      return;
+                                                    }
+
+                                                    const ok = window.confirm(
+                                                      "Are you sure you want to save changes?"
+                                                    );
+                                                    if (!ok) return;
+                                                    void updateSingleTest(
+                                                      k,
+                                                      t,
+                                                      val
+                                                    );
+                                                  }}
+                                                >
+                                                  <option value="">
+                                                    Requested
+                                                  </option>
+                                                  <option value="Accepted">
+                                                    Checked-in
+                                                  </option>
+                                                  <option value="Rejected">
+                                                    Reject
+                                                  </option>
+                                                  <option value="Not Received">
+                                                    Not Received
+                                                  </option>
+                                                </select>
+                                              </td>
+                                            </tr>
+                                          );
+                                        })
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+
+                                {rejectModal.open && (
+                                  <div
+                                    className="cmp-modal-backdrop"
+                                    role="dialog"
+                                    aria-modal="true"
+                                    onMouseDown={(e) => {
+                                      if (
+                                        e.target.classList.contains(
+                                          "cmp-modal-backdrop"
+                                        )
+                                      )
+                                        closeRejectModal();
+                                    }}
+                                  >
+                                    <div
+                                      className="cmp-modal"
+                                      style={{ maxWidth: 520 }}
+                                    >
+                                      <div className="header">
+                                        <h5 className="m-0">
+                                          Rejection Reason
+                                        </h5>
+                                      </div>
+                                      <div className="body">
+                                        <p className="mb-2">
+                                          Select reason(s) for rejection:
+                                        </p>
+                                        <div className="form-check">
+                                          <input
+                                            className="form-check-input"
+                                            type="checkbox"
+                                            id="rejQty"
+                                            checked={rejectModal.qty}
+                                            onChange={(e) =>
+                                              setRejectModal((m) => ({
+                                                ...m,
+                                                qty: e.target.checked,
+                                              }))
+                                            }
+                                          />
+                                          <label
+                                            className="form-check-label"
+                                            htmlFor="rejQty"
+                                          >
+                                            Insufficient Quantity
+                                          </label>
+                                        </div>
+                                        <div className="form-check">
+                                          <input
+                                            className="form-check-input"
+                                            type="checkbox"
+                                            id="rejQuality"
+                                            checked={rejectModal.quality}
+                                            onChange={(e) =>
+                                              setRejectModal((m) => ({
+                                                ...m,
+                                                quality: e.target.checked,
+                                              }))
+                                            }
+                                          />
+                                          <label
+                                            className="form-check-label"
+                                            htmlFor="rejQuality"
+                                          >
+                                            Insufficient Quality
+                                          </label>
+                                        </div>
+                                        <div className="form-text mt-2">
+                                          You may select one or both reasons.
+                                        </div>
+                                        <div className="mt-3">
+                                          <label
+                                            className="form-label"
+                                            htmlFor="rejComment"
+                                          >
+                                            Comment
+                                          </label>
+                                          <textarea
+                                            id="rejComment"
+                                            className="form-control"
+                                            rows={3}
+                                            value={rejectModal.comment}
+                                            onChange={(e) =>
+                                              setRejectModal((m) => ({
+                                                ...m,
+                                                comment: e.target.value,
+                                              }))
+                                            }
+                                            placeholder="Enter comment (optional)"
+                                          />
+                                        </div>
+                                      </div>
+                                      <div className="footer d-flex justify-content-end gap-2 mt-3">
+                                        <button
+                                          type="button"
+                                          className="btn btn-outline-secondary"
+                                          onClick={closeRejectModal}
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn btn-danger"
+                                          onClick={confirmRejectModal}
+                                          disabled={
+                                            !rejectModal.qty &&
+                                            !rejectModal.quality
+                                          }
+                                        >
+                                          Confirm Reject
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Reject reasons modal */}
-              {rejectModal.open && (
-                <div
-                  className="cmp-modal-backdrop"
-                  role="dialog"
-                  aria-modal="true"
-                  onMouseDown={(e) => {
-                    if (e.target.classList.contains("cmp-modal-backdrop"))
-                      closeRejectModal();
-                  }}
-                >
-                  <div className="cmp-modal" style={{ maxWidth: 520 }}>
-                    <div className="header">
-                      <h5 className="m-0">Rejection Reason</h5>
-                    </div>
-                    <div className="body">
-                      <p className="mb-2">Select reason(s) for rejection:</p>
-                      <div className="form-check">
-                        <input
-                          className="form-check-input"
-                          type="checkbox"
-                          id="rejQty"
-                          checked={rejectModal.qty}
-                          onChange={(e) =>
-                            setRejectModal((m) => ({
-                              ...m,
-                              qty: e.target.checked,
-                            }))
-                          }
-                        />
-                        <label className="form-check-label" htmlFor="rejQty">
-                          Insufficient Quantity
-                        </label>
-                      </div>
-                      <div className="form-check">
-                        <input
-                          className="form-check-input"
-                          type="checkbox"
-                          id="rejQuality"
-                          checked={rejectModal.quality}
-                          onChange={(e) =>
-                            setRejectModal((m) => ({
-                              ...m,
-                              quality: e.target.checked,
-                            }))
-                          }
-                        />
-                        <label
-                          className="form-check-label"
-                          htmlFor="rejQuality"
-                        >
-                          Insufficient Quality
-                        </label>
-                      </div>
-                      <div className="form-text mt-2">
-                        You can choose one or both options.
-                      </div>
-                    </div>
-                    <div className="footer">
-                      <button
-                        className="btn btn-light"
-                        onClick={closeRejectModal}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        className="btn btn-danger"
-                        onClick={confirmRejectModal}
-                        disabled={!rejectModal.qty && !rejectModal.quality}
-                      >
-                        Confirm Reject
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </>
+                      })}
+                  </React.Fragment>
+                );
+              }
+            )
           )}
         </div>
       </section>

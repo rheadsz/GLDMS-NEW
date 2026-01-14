@@ -334,7 +334,7 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                   <tbody>
                     {samplesForActiveRequest.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="text-center text-muted">
+                        <td colSpan={8} className="text-center text-muted">
                           No samples for this request.
                         </td>
                       </tr>
@@ -355,7 +355,7 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                             <React.Fragment key={key}>
                               {/* Borehole header row */}
                               <tr className="table-secondary">
-                                <td colSpan={7} style={{ cursor: "pointer" }}>
+                                <td colSpan={8} style={{ cursor: "pointer" }}>
                                   <span
                                     onClick={() => toggleBorehole(key)}
                                     onKeyDown={(e) => {
@@ -391,6 +391,7 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                                   <th>Depth From</th>
                                   <th>Depth To</th>
                                   <th>Container Type</th>
+                                  <th>Size</th>
                                   <th>Field Collection Date</th>
                                   <th>Action/Status</th>
                                 </tr>
@@ -424,6 +425,7 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                                     <td>{s.DepthFrom ?? "—"}</td>
                                     <td>{s.DepthTo ?? "—"}</td>
                                     <td>{s.ContainerType ?? "—"}</td>
+                                    <td>{s.ContainerSizeOption ?? "—"}</td>
                                     <td>{fmtDate(s.FieldCollectionDate)}</td>
                                     <td>
                                       <select

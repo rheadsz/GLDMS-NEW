@@ -45,6 +45,7 @@ module.exports = (db) => {
         ps.SampleNumber,
         ps.BoreholeID,
         ps.DepthFrom,
+        ps.ContainerSizeOption,
         ps.DepthTo,
         ps.ContainerType,
         ps.FieldCollectionDate,

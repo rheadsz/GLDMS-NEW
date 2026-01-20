@@ -512,7 +512,6 @@ module.exports = (db) => {
       // 5. Insert tests
       function insertTests(projectId, requestId) {
         return new Promise((resolve, reject) => {
-          // Skip if no tests
           if (!TestsInfo || !TestsInfo.testRows || !TestsInfo.testRows.length) {
             console.log("No tests to insert");
             return resolve();
@@ -523,277 +522,135 @@ module.exports = (db) => {
             JSON.stringify(TestsInfo.testRows)
           );
 
-          // Process each test row
-          const testRowPromises = TestsInfo.testRows.map((testRow) => {
-            return new Promise((resolveTestRow, rejectTestRow) => {
-              // Skip if no borehole-sample info
-              if (!testRow.boreholeSample) {
-                console.warn(
-                  "Missing borehole-sample information for test row"
-                );
-                return resolveTestRow();
+          const parseDepthPair = (raw) => {
+            if (!raw) return { depthFrom: null, depthTo: null };
+            const m = String(raw).match(
+              /(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/
+            );
+            if (!m) return { depthFrom: null, depthTo: null };
+            return { depthFrom: Number(m[1]), depthTo: Number(m[2]) };
+          };
+
+          const findSubmittedSample = (testRowId) => {
+            if (!testRowId || !Array.isArray(SampleInfoSets)) return null;
+            for (const set of SampleInfoSets) {
+              const list = Array.isArray(set?.samples) ? set.samples : [];
+              for (const s of list) {
+                if (String(s?.id) === String(testRowId)) return s;
               }
+            }
+            return null;
+          };
 
-              // Extract borehole ID from the formatted string
-              let boreholeId = testRow.boreholeSample;
-              console.log("Raw boreholeSample value:", boreholeId);
+          const resolveSampleIdForTestRow = (testRow) =>
+            new Promise((resolveSample, rejectSample) => {
+              const submittedSample = findSubmittedSample(testRow?.id);
 
-              // Handle different potential formats of the borehole ID
-              if (typeof boreholeId === "string") {
-                if (boreholeId.includes("Borehole:")) {
-                  boreholeId = boreholeId.replace("Borehole:", "").trim();
-                } else if (boreholeId.includes(" - ")) {
-                  // Handle 'BH1 - 0-1' format by getting just the borehole part
-                  boreholeId = boreholeId.split(" - ")[0].trim();
+              let boreholeNum = submittedSample?.boreholeId ?? null;
+              let sampleNumber = submittedSample?.sampleId ?? null;
+              let depthFrom =
+                submittedSample?.depthFrom != null
+                  ? Number(submittedSample.depthFrom)
+                  : null;
+              let depthTo =
+                submittedSample?.depthTo != null
+                  ? Number(submittedSample.depthTo)
+                  : null;
+
+              if (!boreholeNum) {
+                const raw = testRow?.boreholeSample;
+                if (typeof raw === "string" && raw.includes(" - ")) {
+                  boreholeNum = raw
+                    .split(" - ")[0]
+                    .replace("Borehole:", "")
+                    .trim();
+                  const depths = parseDepthPair(raw);
+                  if (depthFrom == null) depthFrom = depths.depthFrom;
+                  if (depthTo == null) depthTo = depths.depthTo;
+                } else if (raw) {
+                  boreholeNum = String(raw).replace("Borehole:", "").trim();
                 }
               }
 
-              console.log("Extracted borehole ID for lookup:", boreholeId);
+              if (!boreholeNum) return resolveSample(null);
 
-              // First try to create any missing samples if necessary
-              ensureSampleExists(boreholeId)
-                .then((sampleId) => {
-                  if (sampleId) {
-                    processSampleTests(sampleId);
-                  } else {
-                    // Fall back to the standard lookup
-                    findExistingSample(boreholeId);
-                  }
-                })
-                .catch((err) => {
-                  console.error("Error ensuring sample exists:", err);
-                  findExistingSample(boreholeId);
-                });
+              const sampleQuery = `
+                SELECT s.SampleID
+                FROM project_samples s
+                JOIN project_boreholes b ON s.BoreholeID = b.BoreholeID
+                WHERE b.BoreholeNumber = ?
+                  AND s.RequestID = ?
+                  AND (
+                    ( ? IS NOT NULL AND s.SampleNumber = ? )
+                    OR
+                    ( ? IS NOT NULL AND ? IS NOT NULL AND s.DepthFrom = ? AND s.DepthTo = ? )
+                  )
+                ORDER BY s.SampleID DESC
+                LIMIT 1
+              `;
 
-              // Create a sample on the fly if it doesn't exist
-              function ensureSampleExists(boreholeNum) {
-                return new Promise((resolve, reject) => {
-                  // First check if any boreholes exist with this number FOR THIS REQUEST
-                  db.query(
-                    "SELECT BoreholeID FROM project_boreholes WHERE BoreholeNumber = ? AND RequestID = ?",
-                    [boreholeNum, requestId],
-                    (err, boreholeResult) => {
-                      if (err) {
-                        console.error(
-                          "Error finding borehole for sample creation:",
-                          err
-                        );
-                        return resolve(null);
-                      }
+              const params = [
+                boreholeNum,
+                requestId,
+                sampleNumber,
+                sampleNumber,
+                depthFrom,
+                depthTo,
+                depthFrom,
+                depthTo,
+              ];
 
-                      if (boreholeResult.length === 0) {
-                        console.warn(
-                          `No borehole found with number ${boreholeNum} for RequestID ${requestId}`
-                        );
-                        return resolve(null);
-                      }
-
-                      const bhId = boreholeResult[0].BoreholeID;
-
-                      // Check if any samples exist for this borehole IN THIS REQUEST
-                      db.query(
-                        "SELECT SampleID FROM project_samples WHERE BoreholeID = ? AND RequestID = ? LIMIT 1",
-                        [bhId, requestId],
-                        (err, sampleResult) => {
-                          if (err) {
-                            console.error(
-                              "Error checking for existing samples:",
-                              err
-                            );
-                            return resolve(null);
-                          }
-
-                          if (sampleResult.length > 0) {
-                            // Sample exists, return its ID
-                            console.log(
-                              `Found existing sample ID ${sampleResult[0].SampleID} for borehole ${boreholeNum} in request ${requestId}`
-                            );
-                            return resolve(sampleResult[0].SampleID);
-                          }
-
-                          // Create a new sample
-                          const newSample = {
-                            BoreholeID: bhId,
-                            SampleNumber: "1", // Default sample number
-                            DepthFrom: 0,
-                            DepthTo: 1,
-                            ContainerType: "Tube",
-                            CreatedBy: userName, // Use the already defined userName variable
-                            RequestID: requestId,
-                          };
-
-                          db.query(
-                            "INSERT INTO project_samples (BoreholeID, SampleNumber, DepthFrom, DepthTo, ContainerType, CreatedBy, RequestID) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                            [
-                              newSample.BoreholeID,
-                              newSample.SampleNumber,
-                              newSample.DepthFrom,
-                              newSample.DepthTo,
-                              newSample.ContainerType,
-                              newSample.CreatedBy,
-                              newSample.RequestID,
-                            ],
-                            (err, insertResult) => {
-                              if (err) {
-                                console.error("Error creating sample:", err);
-                                return resolve(null);
-                              }
-
-                              console.log(
-                                `Created new sample with ID ${insertResult.insertId} for borehole ${boreholeNum}`
-                              );
-                              resolve(insertResult.insertId);
-                            }
-                          );
-                        }
-                      );
-                    }
-                  );
-                });
-              }
-
-              // Standard lookup for existing samples
-              function findExistingSample(boreholeNum) {
-                // Find the sample ID - MUST filter by RequestID to get the correct sample
-                const sampleQuery = `
-                  SELECT s.SampleID 
-                  FROM project_samples s
-                  JOIN project_boreholes b ON s.BoreholeID = b.BoreholeID
-                  WHERE b.BoreholeNumber = ? AND s.RequestID = ?
-                  LIMIT 1
-                `;
-
-                console.log(
-                  "Looking for samples with borehole number:",
-                  boreholeNum,
-                  "and RequestID:",
-                  requestId
-                );
-
-                db.query(
-                  sampleQuery,
-                  [boreholeNum, requestId],
-                  (err, sampleResult) => {
-                    if (err) {
-                      console.error("Error finding sample:", err);
-                      return rejectTestRow(err);
-                    }
-
-                    if (sampleResult.length === 0) {
-                      console.warn(
-                        `Sample not found for borehole: ${boreholeNum} and RequestID: ${requestId}`
-                      );
-                      return resolveTestRow(); // Skip this test row
-                    }
-
-                    const sampleId = sampleResult[0].SampleID;
-                    console.log(
-                      `Found sample ID ${sampleId} for borehole ${boreholeNum} in request ${requestId}`
-                    );
-                    processSampleTests(sampleId);
-                  }
-                );
-              }
-
-              // Process tests for a sample
-              function processSampleTests(sampleId) {
-                // Skip if no tests selected
-                if (!testRow.tests || !testRow.tests.length) {
-                  return resolveTestRow();
-                }
-
-                console.log(`\n========================================`);
-                console.log(
-                  `Processing ${testRow.tests.length} tests for sample ID ${sampleId}`
-                );
-                console.log(`Tests to insert:`, testRow.tests);
-                console.log(`========================================\n`);
-
-                // Process each test in the row
-                const testPromises = testRow.tests.map((testName) => {
-                  return new Promise((resolveTest, rejectTest) => {
-                    console.log(`[TEST INSERT] Looking up test: "${testName}"`);
-
-                    // Find the test type ID
-                    const testTypeQuery = `
-                      SELECT TestTypeID FROM test_type WHERE TestName = ?
-                    `;
-
-                    db.query(
-                      testTypeQuery,
-                      [testName],
-                      (err, testTypeResult) => {
-                        if (err) {
-                          console.error(
-                            `[TEST INSERT ERROR] Error finding test type for "${testName}":`,
-                            err
-                          );
-                          return rejectTest(err);
-                        }
-
-                        if (testTypeResult.length === 0) {
-                          console.error(
-                            `[TEST INSERT FAILED] ❌ Test type not found in database: "${testName}"`
-                          );
-                          console.log(
-                            `[TEST INSERT FAILED] Skipping this test and continuing...`
-                          );
-                          return resolveTest();
-                        }
-
-                        const testTypeId = testTypeResult[0].TestTypeID;
-                        console.log(
-                          `[TEST INSERT] ✅ Found test type ID ${testTypeId} for test "${testName}"`
-                        );
-
-                        // Insert the test
-                        const testQuery = `
-                          INSERT INTO project_tests (
-                            SampleID, TestTypeID, Status, RequestingUser, RequestedDate, CreatedBy
-                          ) VALUES (?, ?, ?, ?, CURDATE(), ?)
-                        `;
-
-                        const testParams = [
-                          sampleId,
-                          testTypeId,
-                          "Requested",
-                          userName,
-                          userName,
-                        ];
-
-                        console.log(
-                          `[TEST INSERT] Inserting test "${testName}" with params:`,
-                          testParams
-                        );
-
-                        db.query(testQuery, testParams, (err, testResult) => {
-                          if (err) {
-                            console.error(
-                              `[TEST INSERT ERROR] ❌ Error inserting test "${testName}":`,
-                              err
-                            );
-                            rejectTest(err);
-                          } else {
-                            console.log(
-                              `[TEST INSERT SUCCESS] ✅ Test "${testName}" created with ID: ${testResult.insertId}\n`
-                            );
-                            resolveTest(testResult);
-                          }
-                        });
-                      }
-                    );
-                  });
-                });
-
-                // Wait for all tests in this row to be processed
-                Promise.all(testPromises)
-                  .then(() => resolveTestRow())
-                  .catch((err) => rejectTestRow(err));
-              }
+              db.query(sampleQuery, params, (err, rows) => {
+                if (err) return rejectSample(err);
+                const row = Array.isArray(rows) ? rows[0] : null;
+                resolveSample(row ? row.SampleID : null);
+              });
             });
-          });
 
-          // Wait for all test rows to be processed
+          const insertTestForSample = (sampleId, testName) =>
+            new Promise((resolveTest, rejectTest) => {
+              const testTypeQuery = `
+                SELECT TestTypeID FROM test_type WHERE TestName = ?
+              `;
+
+              db.query(testTypeQuery, [testName], (err, testTypeResult) => {
+                if (err) return rejectTest(err);
+                if (!testTypeResult || testTypeResult.length === 0)
+                  return resolveTest();
+
+                const testTypeId = testTypeResult[0].TestTypeID;
+                const testQuery = `
+                  INSERT INTO project_tests (
+                    SampleID, TestTypeID, Status, RequestingUser, RequestedDate, CreatedBy
+                  ) VALUES (?, ?, ?, ?, CURDATE(), ?)
+                `;
+                const testParams = [
+                  sampleId,
+                  testTypeId,
+                  "Requested",
+                  userName,
+                  userName,
+                ];
+
+                db.query(testQuery, testParams, (err2) => {
+                  if (err2) return rejectTest(err2);
+                  resolveTest();
+                });
+              });
+            });
+
+          const testRowPromises = TestsInfo.testRows.map((testRow) =>
+            resolveSampleIdForTestRow(testRow).then((sampleId) => {
+              if (!sampleId) return null;
+              if (!testRow?.tests || testRow.tests.length === 0) return null;
+              return Promise.all(
+                testRow.tests.map((testName) =>
+                  insertTestForSample(sampleId, testName)
+                )
+              );
+            })
+          );
+
           Promise.all(testRowPromises)
             .then(() => resolve())
             .catch((err) => reject(err));

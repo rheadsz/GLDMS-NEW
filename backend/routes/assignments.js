@@ -50,7 +50,10 @@ function resolveUser(db, req) {
   return new Promise((resolve) => {
     // Prefer session (set by /api/login)
     if (req.session?.userId && req.session?.userName) {
-      return resolve({ UserID: req.session.userId, UserName: req.session.userName });
+      return resolve({
+        UserID: req.session.userId,
+        UserName: req.session.userName,
+      });
     }
     // Optional: if you've attached req.user upstream, honor it
     if (req.user?.UserID && req.user?.UserName) {
@@ -161,9 +164,9 @@ module.exports = (db) => {
         pb.BoreholeNumber
       FROM project_requests pr
       LEFT JOIN project           p  ON p.ProjectID   = pr.ProjectID
-      LEFT JOIN project_tests     pt ON pt.RequestID  = pr.RequestID
+      LEFT JOIN project_samples   ps ON ps.RequestID  = pr.RequestID
+      LEFT JOIN project_tests     pt ON pt.SampleID   = ps.SampleID
       LEFT JOIN test_type         tt ON tt.TestTypeID = pt.TestTypeID
-      LEFT JOIN project_samples   ps ON ps.SampleID   = pt.SampleID
       LEFT JOIN project_boreholes pb ON pb.BoreholeID = ps.BoreholeID
       WHERE pr.RequestID = ?
       ORDER BY pt.TestID ASC
@@ -181,7 +184,11 @@ module.exports = (db) => {
 
         const TotalTests = testRows.length;
         const AssignedCount = testRows.reduce(
-          (n, r) => n + (r.AssignedTester && String(r.AssignedTester).trim() !== "" ? 1 : 0),
+          (n, r) =>
+            n +
+            (r.AssignedTester && String(r.AssignedTester).trim() !== ""
+              ? 1
+              : 0),
           0
         );
         const SubmittedCount = testRows.reduce(
@@ -261,7 +268,8 @@ module.exports = (db) => {
         SUM(CASE WHEN pt.AssignedTester IS NOT NULL AND TRIM(pt.AssignedTester) <> '' THEN 1 ELSE 0 END) AS assigned,
         SUM(CASE WHEN pt.Status = 'Submitted' THEN 1 ELSE 0 END) AS submitted
       FROM project_tests pt
-      WHERE pt.RequestID = ?
+      JOIN project_samples ps ON ps.SampleID = pt.SampleID
+      WHERE ps.RequestID = ?
     `;
     db.query(sql, [requestId], (err, rows) => {
       if (err) {
@@ -334,7 +342,8 @@ module.exports = (db) => {
     const user = await resolveUser(db, req);
     if (!user) return res.status(401).json({ error: "Not authenticated." });
 
-    const { assignedTester, resultDueDate, reportDueDate, notes } = req.body || {};
+    const { assignedTester, resultDueDate, reportDueDate, notes } =
+      req.body || {};
 
     // Fetch BEFORE state
     const sqlBefore = `
@@ -348,7 +357,8 @@ module.exports = (db) => {
         console.error("assign SELECT before error:", e0);
         return res.status(500).json({ error: "Server error" });
       }
-      if (!r0 || r0.length === 0) return res.status(404).json({ error: "Test not found" });
+      if (!r0 || r0.length === 0)
+        return res.status(404).json({ error: "Test not found" });
 
       const before = {
         AssignedTester: r0[0].AssignedTester ?? null,
@@ -360,10 +370,20 @@ module.exports = (db) => {
 
       // Build AFTER state (apply provided values, keep others)
       const after = {
-        AssignedTester: assignedTester !== undefined ? normStr(assignedTester) : before.AssignedTester,
-        ResultDueDate: resultDueDate !== undefined ? normDate(resultDueDate) : normDate(before.ResultDueDate),
-        ReportDueDate: reportDueDate !== undefined ? normDate(reportDueDate) : normDate(before.ReportDueDate),
-        AssignmentNotes: notes !== undefined ? normStr(notes) : before.AssignmentNotes,
+        AssignedTester:
+          assignedTester !== undefined
+            ? normStr(assignedTester)
+            : before.AssignedTester,
+        ResultDueDate:
+          resultDueDate !== undefined
+            ? normDate(resultDueDate)
+            : normDate(before.ResultDueDate),
+        ReportDueDate:
+          reportDueDate !== undefined
+            ? normDate(reportDueDate)
+            : normDate(before.ReportDueDate),
+        AssignmentNotes:
+          notes !== undefined ? normStr(notes) : before.AssignmentNotes,
         Status: before.Status || "Requested",
       };
 
@@ -406,7 +426,9 @@ module.exports = (db) => {
         user.UserName,
       ];
 
-      const sqlUpdate = `UPDATE project_tests SET ${sets.join(", ")} WHERE TestID = ?`;
+      const sqlUpdate = `UPDATE project_tests SET ${sets.join(
+        ", "
+      )} WHERE TestID = ?`;
       db.query(sqlUpdate, [...params, testId], (e1, r1) => {
         if (e1) {
           console.error("POST /assignments/:testId/assign UPDATE error:", e1);
@@ -436,11 +458,19 @@ module.exports = (db) => {
             db.query(sqlGetReq, [testId], (e3, r3) => {
               if (e3) {
                 console.error("assign: get RequestID error:", e3);
-                return res.json({ ok: true, TestID: testId, requestStatusUpdated: false });
+                return res.json({
+                  ok: true,
+                  TestID: testId,
+                  requestStatusUpdated: false,
+                });
               }
               const requestId = r3?.[0]?.RequestID;
               if (!requestId) {
-                return res.json({ ok: true, TestID: testId, requestStatusUpdated: false });
+                return res.json({
+                  ok: true,
+                  TestID: testId,
+                  requestStatusUpdated: false,
+                });
               }
 
               const sqlCounts = `
@@ -452,7 +482,11 @@ module.exports = (db) => {
               db.query(sqlCounts, [requestId], (e4, r4) => {
                 if (e4) {
                   console.error("assign: count tests error:", e4);
-                  return res.json({ ok: true, TestID: testId, requestStatusUpdated: false });
+                  return res.json({
+                    ok: true,
+                    TestID: testId,
+                    requestStatusUpdated: false,
+                  });
                 }
 
                 const total = Number(r4?.[0]?.total || 0);
@@ -460,7 +494,12 @@ module.exports = (db) => {
                 const allAssigned = total > 0 && assigned === total;
 
                 if (!allAssigned) {
-                  return res.json({ ok: true, TestID: testId, requestStatusUpdated: false, totals: { total, assigned } });
+                  return res.json({
+                    ok: true,
+                    TestID: testId,
+                    requestStatusUpdated: false,
+                    totals: { total, assigned },
+                  });
                 }
 
                 const sqlSetRequest = `
@@ -471,9 +510,19 @@ module.exports = (db) => {
                 db.query(sqlSetRequest, [requestId], (e5, r5) => {
                   if (e5) {
                     console.error("assign: set request Assigned error:", e5);
-                    return res.json({ ok: true, TestID: testId, requestStatusUpdated: false, totals: { total, assigned } });
+                    return res.json({
+                      ok: true,
+                      TestID: testId,
+                      requestStatusUpdated: false,
+                      totals: { total, assigned },
+                    });
                   }
-                  res.json({ ok: true, TestID: testId, requestStatusUpdated: r5.affectedRows > 0, totals: { total, assigned } });
+                  res.json({
+                    ok: true,
+                    TestID: testId,
+                    requestStatusUpdated: r5.affectedRows > 0,
+                    totals: { total, assigned },
+                  });
                 });
               });
             });
@@ -504,9 +553,9 @@ module.exports = (db) => {
         DATE(pt.ReportDueDate)     AS AssignedReportDueDate,
         pt.AssignmentNotes         AS Notes
       FROM project_requests pr
-      LEFT JOIN project_tests     pt ON pt.RequestID  = pr.RequestID
+      LEFT JOIN project_samples   ps ON ps.RequestID  = pr.RequestID
+      LEFT JOIN project_tests     pt ON pt.SampleID   = ps.SampleID
       LEFT JOIN test_type         tt ON tt.TestTypeID = pt.TestTypeID
-      LEFT JOIN project_samples   ps ON ps.SampleID   = pt.SampleID
       LEFT JOIN project_boreholes pb ON pb.BoreholeID = ps.BoreholeID
       WHERE pr.RequestID = ?
       ORDER BY pt.TestID ASC
@@ -516,7 +565,7 @@ module.exports = (db) => {
       if (err) return res.status(500).json({ error: "Server error" });
 
       if (rowsNew && rowsNew.length > 0) {
-        const items = rowsNew.map(r => ({
+        const items = rowsNew.map((r) => ({
           TestID: r.TestID,
           RequestedTest: r.RequestedTest ?? "—",
           BoreholeDepth: r.BoreholeDepth ?? "—",
@@ -549,7 +598,7 @@ module.exports = (db) => {
       db.query(sqlLegacy, [requestId], (err2, rowsOld) => {
         if (err2) return res.status(500).json({ error: "Server error" });
 
-        const items = (rowsOld || []).map(r => ({
+        const items = (rowsOld || []).map((r) => ({
           TestID: r.TestID,
           RequestedTest: r.RequestedTest ?? "—",
           BoreholeDepth: r.BoreholeDepth ?? "—",
@@ -583,19 +632,24 @@ module.exports = (db) => {
         console.error("GET /assignments/:testId/history error:", err);
         return res.status(500).json({ error: "Server error" });
       }
-      const items = (rows || []).map(r => ({
+      const items = (rows || []).map((r) => ({
         HistoryID: r.HistoryID,
         TestID: r.TestID,
         ChangedBy: r.ChangedByUserName,
         ChangedAt: r.ChangedAt,
-        Changes: typeof r.Changes === "string" ? safeParseJSON(r.Changes) : r.Changes,
+        Changes:
+          typeof r.Changes === "string" ? safeParseJSON(r.Changes) : r.Changes,
       }));
       return res.json({ items });
     });
   });
 
   function safeParseJSON(s) {
-    try { return JSON.parse(s); } catch { return {}; }
+    try {
+      return JSON.parse(s);
+    } catch {
+      return {};
+    }
   }
 
   return router;

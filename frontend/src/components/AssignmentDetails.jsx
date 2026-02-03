@@ -21,9 +21,41 @@ function AssignmentDetails({
   // Editable rows: on load -> only UNASSIGNED are editable
   const [editing, setEditing] = useState(() => new Set());
 
-  // Expand/collapse state (Borehole -> Sample)
-  const [openBoreholes, setOpenBoreholes] = useState(() => new Set());
-  const [openSamples, setOpenSamples] = useState(() => new Set());
+  // Expand/collapse state (Borehole -> Sample) - persisted in localStorage
+  const OPEN_BOREHOLES_KEY = "gldms_assign_open_boreholes";
+  const OPEN_SAMPLES_KEY = "gldms_assign_open_samples";
+
+  const [openBoreholes, setOpenBoreholes] = useState(() => {
+    try {
+      const saved = localStorage.getItem(OPEN_BOREHOLES_KEY);
+      if (saved) return new Set(JSON.parse(saved));
+    } catch {}
+    return new Set();
+  });
+
+  const [openSamples, setOpenSamples] = useState(() => {
+    try {
+      const saved = localStorage.getItem(OPEN_SAMPLES_KEY);
+      if (saved) return new Set(JSON.parse(saved));
+    } catch {}
+    return new Set();
+  });
+
+  // Persist expand/collapse state to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        OPEN_BOREHOLES_KEY,
+        JSON.stringify([...openBoreholes]),
+      );
+    } catch {}
+  }, [openBoreholes]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(OPEN_SAMPLES_KEY, JSON.stringify([...openSamples]));
+    } catch {}
+  }, [openSamples]);
 
   // Assign modal (single row)
   const [assignModal, setAssignModal] = useState({
@@ -152,24 +184,7 @@ function AssignmentDetails({
         setAssignedRows(nextAssigned);
         // On load: only UNASSIGNED rows are editable
         setEditing(new Set(unassignedIds));
-
-        // Default open: expand all boreholes and samples
-        const bh = new Set();
-        const sm = new Set();
-        items.forEach((row) => {
-          const boreholeKey = String(
-            row.BoreholeNumber ?? row.BoreholeDepth ?? "—",
-          );
-          bh.add(boreholeKey);
-          const sampleKey = String(
-            row.SampleID ??
-              row.SampleNumber ??
-              `${boreholeKey}|${row.DepthFrom ?? ""}|${row.DepthTo ?? ""}`,
-          );
-          sm.add(`${boreholeKey}::${sampleKey}`);
-        });
-        setOpenBoreholes(bh);
-        setOpenSamples(sm);
+        // Note: openBoreholes/openSamples state is preserved from localStorage
       })
       .catch((e) => {
         console.error("summary fetch error:", e);
@@ -247,11 +262,17 @@ function AssignmentDetails({
   }
 
   // Assign single row or save edits for an assigned row
-  async function handleAssign(testId) {
+  async function handleAssign(testId, skipConfirm = false) {
     const isEditing = editing.has(testId);
     if (assignedRows.has(testId) && !isEditing) {
       setError("This test is already assigned. Use Edit to make changes.");
       return;
+    }
+
+    // Confirmation dialog
+    if (!skipConfirm) {
+      const ok = window.confirm("Are you sure you want to save changes?");
+      if (!ok) return;
     }
 
     const d = drafts[testId] || {};
@@ -488,6 +509,10 @@ function AssignmentDetails({
     setAssignModal((m) => ({ ...m, form: { ...m.form, [field]: value } }));
   }
   async function confirmAssignFromModal() {
+    // Confirmation dialog
+    const ok = window.confirm("Are you sure you want to save changes?");
+    if (!ok) return;
+
     const { testId, form } = assignModal;
     setDrafts((prev) => ({
       ...prev,
@@ -501,7 +526,7 @@ function AssignmentDetails({
       setError("Delivery due date is required (or provide a result due date).");
       return;
     }
-    await handleAssign(testId);
+    await handleAssign(testId, true); // skipConfirm since we already confirmed
     closeAssignModal();
   }
 
@@ -540,6 +565,10 @@ function AssignmentDetails({
 
   // NEW: Bulk assign using ONE set of values for ALL selected rows
   async function confirmBulkAssign() {
+    // Confirmation dialog
+    const ok = window.confirm("Are you sure you want to save changes?");
+    if (!ok) return;
+
     const ids = Array.from(selected);
     const { testerId, resultDueDate, comments } = bulkModal.form;
 

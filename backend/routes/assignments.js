@@ -1,6 +1,17 @@
 // routes/assignments.js
 const express = require("express");
 
+/* --------------------- UTIL: Status mapping (same as request-samples.js) --------------------- */
+const mapDbStatusToUi = (s) => {
+  if (s == null) return null;
+  const v = String(s).trim();
+  if (!v) return null;
+  if (v === "Completed") return "Accepted";
+  if (v === "Cancelled") return "Rejected";
+  if (v === "Requested") return null;
+  return v;
+};
+
 /* --------------------- UTIL: normalize for robust diffs --------------------- */
 const normStr = (v) => (v == null ? null : String(v).trim());
 const normDate = (v) => {
@@ -545,14 +556,14 @@ module.exports = (db) => {
         DATE(pr.RequestDate)       AS RequestSubmissionDate,
         DATE(pt.RequestedDate)     AS RequestedDueDate,
         tt.TestName                AS RequestedTest,
-        pb.BoreholeNumber          AS BoreholeNumber,
+        ps.BoreholeID              AS BoreholeNumber,
         ps.SampleID                AS SampleID,
         ps.SampleNumber            AS SampleNumber,
         ps.DepthFrom               AS DepthFrom,
         ps.DepthTo                 AS DepthTo,
-        CONCAT(pb.BoreholeNumber, ' (', ps.DepthFrom, '–', ps.DepthTo, ')') AS BoreholeDepth,
+        CONCAT(ps.BoreholeID, ' (', ps.DepthFrom, '–', ps.DepthTo, ')') AS BoreholeDepth,
         pt.TestID,
-        COALESCE(pt.TestStatus, pt.Status)         AS TestStatus,
+        pt.Status                                  AS TestStatus,
         pt.AssignedTester,
         DATE(pt.ResultDueDate)     AS AssignedResultDueDate,
         DATE(pt.ReportDueDate)     AS AssignedReportDueDate,
@@ -561,7 +572,6 @@ module.exports = (db) => {
       LEFT JOIN project_samples   ps ON ps.RequestID  = pr.RequestID
       LEFT JOIN project_tests     pt ON pt.SampleID   = ps.SampleID
       LEFT JOIN test_type         tt ON tt.TestTypeID = pt.TestTypeID
-      LEFT JOIN project_boreholes pb ON pb.BoreholeID = ps.BoreholeID
       WHERE pr.RequestID = ?
       ORDER BY pt.TestID ASC
     `;
@@ -581,7 +591,7 @@ module.exports = (db) => {
           BoreholeDepth: r.BoreholeDepth ?? "—",
           RequestSubmissionDate: r.RequestSubmissionDate ?? "—",
           RequestedDueDate: r.RequestedDueDate ?? "—",
-          TestStatus: r.TestStatus ?? null,
+          TestStatus: mapDbStatusToUi(r.TestStatus),
           AssignedTester: r.AssignedTester ?? null,
           AssignedResultDueDate: r.AssignedResultDueDate ?? null,
           AssignedReportDueDate: r.AssignedReportDueDate ?? null,

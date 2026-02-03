@@ -21,6 +21,10 @@ function AssignmentDetails({
   // Editable rows: on load -> only UNASSIGNED are editable
   const [editing, setEditing] = useState(() => new Set());
 
+  // Expand/collapse state (Borehole -> Sample)
+  const [openBoreholes, setOpenBoreholes] = useState(() => new Set());
+  const [openSamples, setOpenSamples] = useState(() => new Set());
+
   // Assign modal (single row)
   const [assignModal, setAssignModal] = useState({
     open: false,
@@ -148,6 +152,24 @@ function AssignmentDetails({
         setAssignedRows(nextAssigned);
         // On load: only UNASSIGNED rows are editable
         setEditing(new Set(unassignedIds));
+
+        // Default open: expand all boreholes and samples
+        const bh = new Set();
+        const sm = new Set();
+        items.forEach((row) => {
+          const boreholeKey = String(
+            row.BoreholeNumber ?? row.BoreholeDepth ?? "—",
+          );
+          bh.add(boreholeKey);
+          const sampleKey = String(
+            row.SampleID ??
+              row.SampleNumber ??
+              `${boreholeKey}|${row.DepthFrom ?? ""}|${row.DepthTo ?? ""}`,
+          );
+          sm.add(`${boreholeKey}::${sampleKey}`);
+        });
+        setOpenBoreholes(bh);
+        setOpenSamples(sm);
       })
       .catch((e) => {
         console.error("summary fetch error:", e);
@@ -186,7 +208,7 @@ function AssignmentDetails({
         if (!mounted) return;
         const items = Array.isArray(data?.items) ? data.items : [];
         const usernames = items.map((t) =>
-          typeof t === "string" ? t : t?.UserName || t?.name || String(t)
+          typeof t === "string" ? t : t?.UserName || t?.name || String(t),
         );
         setTesters(usernames);
       })
@@ -263,8 +285,8 @@ function AssignmentDetails({
               "x-user-name": String(devName || "Dev"),
             }
           : devId && devName
-          ? { "x-user-id": String(devId), "x-user-name": String(devName) }
-          : {}),
+            ? { "x-user-id": String(devId), "x-user-name": String(devName) }
+            : {}),
       };
       const res = await fetch(`/api/assignments/${testId}/assign`, {
         method: "POST",
@@ -322,6 +344,81 @@ function AssignmentDetails({
       })
       .filter(Boolean);
   }, [rows]);
+
+  // Group rows by Borehole -> Sample -> Tests
+  const groupedRows = useMemo(() => {
+    const result = [];
+    const byBorehole = new Map();
+
+    rows.forEach((r, i) => {
+      const testId = getItemId(r, i);
+      const boreholeKey = String(r.BoreholeNumber ?? r.BoreholeDepth ?? "—");
+      const sampleKey = String(
+        r.SampleID ??
+          r.SampleNumber ??
+          `${boreholeKey}|${r.DepthFrom ?? ""}|${r.DepthTo ?? ""}`,
+      );
+      const sampleStateKey = `${boreholeKey}::${sampleKey}`;
+
+      if (!byBorehole.has(boreholeKey)) {
+        byBorehole.set(boreholeKey, {
+          boreholeKey,
+          samples: new Map(),
+        });
+      }
+      const bh = byBorehole.get(boreholeKey);
+      if (!bh.samples.has(sampleKey)) {
+        bh.samples.set(sampleKey, {
+          sampleKey,
+          sampleStateKey,
+          sampleNumberOrId: r.SampleNumber ?? r.SampleID ?? null,
+          depthFrom: r.DepthFrom ?? null,
+          depthTo: r.DepthTo ?? null,
+          tests: [],
+        });
+      }
+      bh.samples.get(sampleKey).tests.push({ r, i, testId });
+    });
+
+    // preserve insertion order
+    byBorehole.forEach((bh) => {
+      result.push({
+        boreholeKey: bh.boreholeKey,
+        samples: Array.from(bh.samples.values()),
+      });
+    });
+    return result;
+  }, [rows]);
+
+  function toggleBorehole(boreholeKey) {
+    setOpenBoreholes((prev) => {
+      const next = new Set(prev);
+      if (next.has(boreholeKey)) next.delete(boreholeKey);
+      else next.add(boreholeKey);
+      return next;
+    });
+  }
+
+  function toggleSample(sampleStateKey) {
+    setOpenSamples((prev) => {
+      const next = new Set(prev);
+      if (next.has(sampleStateKey)) next.delete(sampleStateKey);
+      else next.add(sampleStateKey);
+      return next;
+    });
+  }
+
+  function formatSampleHeader(sampleNumberOrId, depthFrom, depthTo) {
+    const label =
+      sampleNumberOrId != null && String(sampleNumberOrId) !== ""
+        ? String(sampleNumberOrId)
+        : "—";
+    const from =
+      depthFrom != null && String(depthFrom) !== "" ? String(depthFrom) : "—";
+    const to =
+      depthTo != null && String(depthTo) !== "" ? String(depthTo) : "—";
+    return `Sample ${label} (${from}-${to})`;
+  }
 
   const allSelectableChecked =
     selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
@@ -463,7 +560,7 @@ function AssignmentDetails({
     });
     if (anyRejected && !(comments && String(comments).trim().length)) {
       setError(
-        "Comment is required for rejected tests (one or more selected)."
+        "Comment is required for rejected tests (one or more selected).",
       );
       return;
     }
@@ -500,8 +597,8 @@ function AssignmentDetails({
                   "x-user-name": String(devName || "Dev"),
                 }
               : devId && devName
-              ? { "x-user-id": String(devId), "x-user-name": String(devName) }
-              : {}),
+                ? { "x-user-id": String(devId), "x-user-name": String(devName) }
+                : {}),
           };
           return fetch(`/api/assignments/${id}/assign`, {
             method: "POST",
@@ -526,13 +623,13 @@ function AssignmentDetails({
             }
             return r.json();
           });
-        })
+        }),
       );
 
       const succeeded = [],
         failed = [];
       results.forEach((res, i) =>
-        (res.status === "fulfilled" ? succeeded : failed).push(ids[i])
+        (res.status === "fulfilled" ? succeeded : failed).push(ids[i]),
       );
 
       if (succeeded.length > 0) {
@@ -603,7 +700,7 @@ function AssignmentDetails({
 
   const assignedCount = useMemo(
     () => rows.filter((r) => !!r.AssignedTester).length,
-    [rows]
+    [rows],
   );
   const totalCount = useMemo(() => rows.length, [rows]);
   const unassignedCount = totalCount - assignedCount;
@@ -704,212 +801,302 @@ function AssignmentDetails({
         <span className="mono">{requestedDueTop}</span>
       </div>
 
-      <table className="table table-bordered table-hover align-middle fs-6">
-        <thead className="table-light">
-          <tr>
-            <th style={{ width: "2.75rem", textAlign: "center" }}>
-              <input
-                type="checkbox"
-                className="form-check-input"
-                checked={allSelectableChecked}
-                onChange={toggleAll}
-                aria-label="Select all"
-              />
-            </th>
-            <th>Requested Test</th>
-            <th>Sample (Borehole ID-Depth)</th>
-            <th>Tester</th>
-            <th>Due</th>
-            <th>Status</th>
-            <th style={{ width: "10.5rem" }}>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {loading ? (
-            <tr>
-              <td colSpan={7} className="text-center">
-                Loading…
-              </td>
-            </tr>
-          ) : rows.length === 0 ? (
-            <tr>
-              <td colSpan={7} className="text-center">
-                No items.
-              </td>
-            </tr>
-          ) : (
-            rows.map((r, i) => {
-              const testId = getItemId(r, i);
-              const d = drafts[testId] || {};
-              const isAssigned = assignedRows.has(testId);
-              const isEditing = editing.has(testId);
-              const checked = selected.has(testId);
-              const isSubmitting = !!submitting[testId];
-
-              const viewTester = d.testerId || "—";
-              const viewResultDue = d.resultDueDate || "—";
-              const viewReportDue = d.reportDueDate || "—";
-              const viewComments = d.comments || "—";
-
-              const isRejected = String(r.TestStatus || "")
-                .toLowerCase()
-                .includes("reject");
-              return (
-                <tr
-                  key={testId}
-                  className={`${isEditing ? "table-active" : ""} ${
-                    isRejected ? "opacity-75" : ""
-                  }`}
-                  style={
-                    isRejected ? { backgroundColor: "#f2f2f2" } : undefined
+      {/* Hierarchical Borehole -> Sample -> Tests (matching Check in Requests) */}
+      {loading ? (
+        <div className="text-center py-4">Loading…</div>
+      ) : rows.length === 0 ? (
+        <div className="text-muted text-center py-4">No items.</div>
+      ) : (
+        groupedRows.map((bh) => {
+          const bhOpen = openBoreholes.has(bh.boreholeKey);
+          return (
+            <React.Fragment key={`bh:${bh.boreholeKey}`}>
+              {/* Borehole header */}
+              <div
+                className="border rounded px-3 py-2 mb-2 bg-light"
+                style={{ cursor: "pointer" }}
+                onClick={() => toggleBorehole(bh.boreholeKey)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toggleBorehole(bh.boreholeKey);
                   }
-                >
-                  <td className="text-center">
-                    <input
-                      type="checkbox"
-                      className="form-check-input"
-                      checked={checked}
-                      onChange={() => toggleOne(testId)}
-                      disabled={isRejected}
-                      aria-label={`Select test ${testId}`}
-                    />
-                  </td>
+                }}
+                role="button"
+                tabIndex={0}
+                aria-expanded={bhOpen}
+              >
+                <span style={{ marginRight: 8 }}>{bhOpen ? "▾" : "▸"}</span>
+                <strong>Borehole ID:</strong> {bh.boreholeKey}
+              </div>
 
-                  <td>{r.RequestedTest ?? "—"}</td>
-                  <td
-                    className={`${
-                      isRejected ? "text-danger" : "text-primary"
-                    } fw-semibold`}
-                    title={
-                      isRejected
-                        ? "The sample for this test is Rejected."
-                        : undefined
-                    }
-                  >
-                    {isRejected && (
-                      <span
-                        className="me-1"
-                        title="The sample for this test is Rejected."
-                        aria-label="Rejected sample"
-                        role="img"
+              {bhOpen &&
+                bh.samples.map((s) => {
+                  const sOpen = openSamples.has(s.sampleStateKey);
+                  const sampleLabel = formatSampleHeader(
+                    s.sampleNumberOrId,
+                    s.depthFrom,
+                    s.depthTo,
+                  );
+
+                  return (
+                    <div key={`sm:${s.sampleStateKey}`} className="mb-3 ms-3">
+                      {/* Sample header */}
+                      <div
+                        className="d-flex align-items-center justify-content-between border rounded px-3 py-2 bg-white"
+                        style={{ cursor: "pointer" }}
+                        onClick={() => toggleSample(s.sampleStateKey)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            toggleSample(s.sampleStateKey);
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={sOpen}
                       >
-                        !
-                      </span>
-                    )}
-                    {r.BoreholeDepth ?? "—"}
-                  </td>
-                  <td>
-                    {isEditing && !isRejected ? (
-                      <select
-                        className="form-select"
-                        style={{ fontSize: "1rem" }}
-                        value={d.testerId || ""}
-                        onChange={(e) =>
-                          updateDraft(testId, { testerId: e.target.value })
-                        }
-                      >
-                        <option value="">— Select tester —</option>
-                        {testers.map((name) => (
-                          <option key={name} value={name}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span>{viewTester}</span>
-                    )}
-                  </td>
+                        <div className="d-flex align-items-center gap-2">
+                          <span style={{ fontSize: 18 }}>
+                            {sOpen ? "▾" : "▸"}
+                          </span>
+                          <div className="fw-semibold">{sampleLabel}</div>
+                        </div>
+                      </div>
 
-                  <td>
-                    {isEditing && !isRejected ? (
-                      <input
-                        type="date"
-                        className="form-control"
-                        style={{ fontSize: "1rem" }}
-                        value={d.resultDueDate || ""}
-                        onChange={(e) =>
-                          updateDraft(testId, { resultDueDate: e.target.value })
-                        }
-                      />
-                    ) : (
-                      <span>{viewResultDue}</span>
-                    )}
-                  </td>
+                      {sOpen && (
+                        <div className="ms-3 mt-2">
+                          <div className="table-responsive">
+                            <table className="table table-bordered table-sm mb-0">
+                              <thead className="table-light">
+                                <tr>
+                                  <th
+                                    style={{
+                                      width: "2.25rem",
+                                      textAlign: "center",
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className="form-check-input"
+                                      checked={
+                                        s.tests.length > 0 &&
+                                        s.tests.every(({ testId }) =>
+                                          selected.has(testId),
+                                        )
+                                      }
+                                      onChange={(e) => {
+                                        const next = e.target.checked;
+                                        setSelected((prev) => {
+                                          const newSet = new Set(prev);
+                                          s.tests.forEach(({ testId, r }) => {
+                                            const isRejected = String(
+                                              r.TestStatus || "",
+                                            )
+                                              .toLowerCase()
+                                              .includes("reject");
+                                            if (isRejected) return;
+                                            if (next) newSet.add(testId);
+                                            else newSet.delete(testId);
+                                          });
+                                          return newSet;
+                                        });
+                                      }}
+                                      disabled={s.tests.length === 0}
+                                      aria-label="Select all tests in sample"
+                                    />
+                                  </th>
+                                  <th>Requested Test</th>
+                                  <th>Sample (Borehole ID-Depth)</th>
+                                  <th>Tester</th>
+                                  <th>Due</th>
+                                  <th>Status</th>
+                                  <th style={{ width: "6.5rem" }}>Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {s.tests.length === 0 ? (
+                                  <tr>
+                                    <td
+                                      colSpan={7}
+                                      className="text-center text-muted"
+                                    >
+                                      No tests for this sample.
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  s.tests.map(({ r, i, testId }) => {
+                                    const d = drafts[testId] || {};
+                                    const isAssigned = assignedRows.has(testId);
+                                    const isEditing = editing.has(testId);
+                                    const checked = selected.has(testId);
+                                    const isSubmitting = !!submitting[testId];
 
-                  {/* Report Due column removed; replaced by global Delivery Due */}
+                                    const viewTester = d.testerId || "—";
+                                    const viewResultDue =
+                                      d.resultDueDate || "—";
 
-                  {/* Status */}
-                  <td>
-                    {isAssigned ? (
-                      <span className="badge rounded-pill text-bg-success">
-                        Assigned
-                      </span>
-                    ) : (
-                      <span className="badge rounded-pill text-bg-secondary">
-                        Checked in
-                      </span>
-                    )}
-                    {isSubmitting && (
-                      <span className="ms-2 small text-muted">Saving…</span>
-                    )}
-                  </td>
+                                    const isRejected = String(
+                                      r.TestStatus || "",
+                                    )
+                                      .toLowerCase()
+                                      .includes("reject");
 
-                  {/* Comments column removed */}
-
-                  <td>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: ".4rem",
-                        alignItems: "center",
-                      }}
-                    >
-                      {/* Primary action: Assign… or Edit/Done */}
-                      {!isAssigned ? (
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-primary btn-pill"
-                          onClick={() => openAssignModal(testId)}
-                          disabled={isRejected || !checked}
-                          title="Assign tester and due dates"
-                        >
-                          Assign…
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className={`btn btn-sm btn-${
-                            isEditing ? "secondary" : "primary"
-                          } btn-pill`}
-                          onClick={() =>
-                            isEditing
-                              ? handleAssign(testId)
-                              : toggleEdit(testId)
-                          }
-                          disabled={
-                            isRejected ||
-                            (!isEditing && !checked) ||
-                            (isEditing && isSubmitting)
-                          }
-                          title={
-                            isEditing
-                              ? isSubmitting
-                                ? "Saving…"
-                                : "Save changes and stop editing"
-                              : "Edit this row"
-                          }
-                        >
-                          {isEditing ? "Done" : "Edit"}
-                        </button>
+                                    return (
+                                      <tr
+                                        key={testId}
+                                        className={`${
+                                          isEditing ? "table-active" : ""
+                                        } ${isRejected ? "opacity-75" : ""}`}
+                                        style={
+                                          isRejected
+                                            ? { backgroundColor: "#f2f2f2" }
+                                            : undefined
+                                        }
+                                      >
+                                        <td className="text-center">
+                                          <input
+                                            type="checkbox"
+                                            className="form-check-input"
+                                            checked={checked}
+                                            onChange={() => toggleOne(testId)}
+                                            disabled={isRejected}
+                                            aria-label={`Select test ${testId}`}
+                                          />
+                                        </td>
+                                        <td>{r.RequestedTest ?? "—"}</td>
+                                        <td
+                                          className={`${
+                                            isRejected
+                                              ? "text-danger"
+                                              : "text-primary"
+                                          } fw-semibold`}
+                                          title={
+                                            isRejected
+                                              ? "The sample for this test is Rejected."
+                                              : undefined
+                                          }
+                                        >
+                                          {isRejected && (
+                                            <span className="me-1">!</span>
+                                          )}
+                                          {r.BoreholeDepth ?? "—"}
+                                        </td>
+                                        <td>
+                                          {isEditing && !isRejected ? (
+                                            <select
+                                              className="form-select form-select-sm"
+                                              value={d.testerId || ""}
+                                              onChange={(e) =>
+                                                updateDraft(testId, {
+                                                  testerId: e.target.value,
+                                                })
+                                              }
+                                            >
+                                              <option value="">
+                                                — Select tester —
+                                              </option>
+                                              {testers.map((name) => (
+                                                <option key={name} value={name}>
+                                                  {name}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          ) : (
+                                            <span>{viewTester}</span>
+                                          )}
+                                        </td>
+                                        <td>
+                                          {isEditing && !isRejected ? (
+                                            <input
+                                              type="date"
+                                              className="form-control form-control-sm"
+                                              value={d.resultDueDate || ""}
+                                              onChange={(e) =>
+                                                updateDraft(testId, {
+                                                  resultDueDate: e.target.value,
+                                                })
+                                              }
+                                            />
+                                          ) : (
+                                            <span>{viewResultDue}</span>
+                                          )}
+                                        </td>
+                                        <td>
+                                          {isAssigned ? (
+                                            <span className="badge rounded-pill text-bg-success">
+                                              Assigned
+                                            </span>
+                                          ) : (
+                                            <span className="badge rounded-pill text-bg-secondary">
+                                              Checked in
+                                            </span>
+                                          )}
+                                          {isSubmitting && (
+                                            <span className="ms-2 small text-muted">
+                                              Saving…
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td>
+                                          {!isAssigned ? (
+                                            <button
+                                              type="button"
+                                              className="btn btn-sm btn-primary btn-pill"
+                                              onClick={() =>
+                                                openAssignModal(testId)
+                                              }
+                                              disabled={isRejected || !checked}
+                                              title="Assign tester and due dates"
+                                            >
+                                              Assign…
+                                            </button>
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              className={`btn btn-sm btn-${
+                                                isEditing
+                                                  ? "secondary"
+                                                  : "primary"
+                                              } btn-pill`}
+                                              onClick={() =>
+                                                isEditing
+                                                  ? handleAssign(testId)
+                                                  : toggleEdit(testId)
+                                              }
+                                              disabled={
+                                                isRejected ||
+                                                (!isEditing && !checked) ||
+                                                (isEditing && isSubmitting)
+                                              }
+                                              title={
+                                                isEditing
+                                                  ? isSubmitting
+                                                    ? "Saving…"
+                                                    : "Save changes"
+                                                  : "Edit this row"
+                                              }
+                                            >
+                                              {isEditing ? "Done" : "Edit"}
+                                            </button>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
                       )}
                     </div>
-                  </td>
-                </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
+                  );
+                })}
+            </React.Fragment>
+          );
+        })
+      )}
 
       {/* Bottom bar: Assign Selected (only when more than one selected) */}
       {selectedCount > 1 && (

@@ -115,8 +115,8 @@ module.exports = (db) => {
       (r.BoreholeNumber
         ? `${r.BoreholeNumber} (${r.DepthFrom ?? ""}–${r.DepthTo ?? ""})`
         : r.LegacyBH
-        ? `${r.LegacyBH} (${r.DepthFrom ?? ""}–${r.DepthTo ?? ""})`
-        : null) ?? "—",
+          ? `${r.LegacyBH} (${r.DepthFrom ?? ""}–${r.DepthTo ?? ""})`
+          : null) ?? "—",
   });
 
   function sendEmpty(res, requestId, efis = "—") {
@@ -189,11 +189,11 @@ module.exports = (db) => {
             (r.AssignedTester && String(r.AssignedTester).trim() !== ""
               ? 1
               : 0),
-          0
+          0,
         );
         const SubmittedCount = testRows.reduce(
           (n, r) => n + (r.TestStatus === "Submitted" ? 1 : 0),
-          0
+          0,
         );
 
         const header = {
@@ -427,7 +427,7 @@ module.exports = (db) => {
       ];
 
       const sqlUpdate = `UPDATE project_tests SET ${sets.join(
-        ", "
+        ", ",
       )} WHERE TestID = ?`;
       db.query(sqlUpdate, [...params, testId], (e1, r1) => {
         if (e1) {
@@ -526,7 +526,7 @@ module.exports = (db) => {
                 });
               });
             });
-          }
+          },
         );
       });
     });
@@ -545,6 +545,11 @@ module.exports = (db) => {
         DATE(pr.RequestDate)       AS RequestSubmissionDate,
         DATE(pt.RequestedDate)     AS RequestedDueDate,
         tt.TestName                AS RequestedTest,
+        pb.BoreholeNumber          AS BoreholeNumber,
+        ps.SampleID                AS SampleID,
+        ps.SampleNumber            AS SampleNumber,
+        ps.DepthFrom               AS DepthFrom,
+        ps.DepthTo                 AS DepthTo,
         CONCAT(pb.BoreholeNumber, ' (', ps.DepthFrom, '–', ps.DepthTo, ')') AS BoreholeDepth,
         pt.TestID,
         COALESCE(pt.TestStatus, pt.Status)         AS TestStatus,
@@ -568,6 +573,11 @@ module.exports = (db) => {
         const items = rowsNew.map((r) => ({
           TestID: r.TestID,
           RequestedTest: r.RequestedTest ?? "—",
+          BoreholeNumber: r.BoreholeNumber ?? null,
+          SampleID: r.SampleID ?? null,
+          SampleNumber: r.SampleNumber ?? null,
+          DepthFrom: r.DepthFrom ?? null,
+          DepthTo: r.DepthTo ?? null,
           BoreholeDepth: r.BoreholeDepth ?? "—",
           RequestSubmissionDate: r.RequestSubmissionDate ?? "—",
           RequestedDueDate: r.RequestedDueDate ?? "—",
@@ -586,6 +596,10 @@ module.exports = (db) => {
           DATE(tr.DateOfRequest)      AS RequestSubmissionDate,
           DATE(tr.TestResultsDueDate) AS RequestedDueDate,
           tt.TestName                 AS RequestedTest,
+          trd.BoreholeID              AS BoreholeNumber,
+          trd.SampleNumber            AS SampleNumber,
+          trd.DepthFrom               AS DepthFrom,
+          trd.DepthTo                 AS DepthTo,
           CONCAT(trd.BoreholeID, ' (', trd.DepthFrom, '–', trd.DepthTo, ')') AS BoreholeDepth,
           trd.DetailID                AS TestID
         FROM test_request tr
@@ -601,6 +615,11 @@ module.exports = (db) => {
         const items = (rowsOld || []).map((r) => ({
           TestID: r.TestID,
           RequestedTest: r.RequestedTest ?? "—",
+          BoreholeNumber: r.BoreholeNumber ?? null,
+          SampleID: null,
+          SampleNumber: r.SampleNumber ?? null,
+          DepthFrom: r.DepthFrom ?? null,
+          DepthTo: r.DepthTo ?? null,
           BoreholeDepth: r.BoreholeDepth ?? "—",
           RequestSubmissionDate: r.RequestSubmissionDate ?? "—",
           RequestedDueDate: r.RequestedDueDate ?? "—",

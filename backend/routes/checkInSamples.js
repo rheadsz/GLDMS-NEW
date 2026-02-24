@@ -168,5 +168,63 @@ module.exports = (db) => {
     });
   });
 
+  // POST /api/checkin/sample-status/bulk
+  // Body: { SampleIDs: [..], Action }
+  // Updates ActionStatus for multiple samples
+  router.post("/checkin/sample-status/bulk", (req, res) => {
+    const { SampleIDs, Action } = req.body || {};
+    const ids = Array.isArray(SampleIDs)
+      ? SampleIDs.map((x) => (x == null ? null : Number(x))).filter((x) => x)
+      : [];
+
+    if (!ids.length) {
+      return res.status(400).json({ error: "SampleIDs is required." });
+    }
+
+    if (!Action) {
+      return res.status(400).json({ error: "Action is required." });
+    }
+
+    const label = String(Action).toLowerCase();
+    let actionStatus;
+    if (label.includes("checked")) {
+      actionStatus = "Checked in";
+    } else if (label.includes("reject")) {
+      actionStatus = "Rejected";
+    } else if (label.includes("not")) {
+      actionStatus = "Not Received";
+    } else {
+      actionStatus = Action;
+    }
+
+    const sql = `
+      UPDATE project_samples
+      SET ActionStatus = ?
+      WHERE SampleID IN (?);
+    `;
+
+    db.query(sql, [actionStatus, ids], (err, result) => {
+      if (err) {
+        console.error(
+          "[ERR] POST /api/checkin/sample-status/bulk:",
+          err.message
+        );
+        return res
+          .status(500)
+          .json({ error: "Failed to update ActionStatus." });
+      }
+
+      console.log(
+        `[RES] POST /api/checkin/sample-status/bulk samples=${ids.length} -> ${actionStatus}`
+      );
+      return res.json({
+        ok: true,
+        affectedRows: result?.affectedRows ?? 0,
+        actionStatus,
+        sampleIds: ids,
+      });
+    });
+  });
+
   return router;
 };

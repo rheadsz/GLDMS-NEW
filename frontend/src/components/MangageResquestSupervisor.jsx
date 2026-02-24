@@ -49,11 +49,43 @@ function AppWithSidebar() {
   const SIDEBAR_CLOSED_PX = 0;
 
   // ===== Assignments state =====
+  const SELECTED_REQUEST_STORAGE_KEY = "gldms_assign_tests_selected_request";
   const [requests, setRequests] = useState([]);
   const [reqLoading, setReqLoading] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [reqStatusFilter, setReqStatusFilter] = useState("All");
   const [reqSortOrder, setReqSortOrder] = useState("Newest");
+
+  // Restore selected request from localStorage when requests load
+  useEffect(() => {
+    if (requests.length === 0) return;
+    try {
+      const savedId = localStorage.getItem(SELECTED_REQUEST_STORAGE_KEY);
+      if (savedId != null) {
+        const id = Number(savedId);
+        const found = requests.find((r) => r.RequestID === id);
+        if (found && !selectedRequest) {
+          setSelectedRequest(found);
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [requests]);
+
+  // Save selected request to localStorage when it changes
+  useEffect(() => {
+    try {
+      if (selectedRequest?.RequestID != null) {
+        localStorage.setItem(
+          SELECTED_REQUEST_STORAGE_KEY,
+          String(selectedRequest.RequestID),
+        );
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [selectedRequest?.RequestID]);
 
   // NEW: left-panel highlight state (requestId -> boolean)
   const [needsAttention, setNeedsAttention] = useState({});
@@ -159,7 +191,7 @@ function AppWithSidebar() {
       }
       const workers = Array.from(
         { length: Math.min(CONCURRENCY, list.length) },
-        () => worker()
+        () => worker(),
       );
       await Promise.all(workers);
 
@@ -190,11 +222,11 @@ function AppWithSidebar() {
       if (res.ok) {
         setRequests((prev) =>
           prev.map((req) =>
-            req.RequestID === id ? { ...req, Status: newStatus } : req
-          )
+            req.RequestID === id ? { ...req, Status: newStatus } : req,
+          ),
         );
         setSelectedRequest((prev) =>
-          prev && prev.RequestID === id ? { ...prev, Status: newStatus } : prev
+          prev && prev.RequestID === id ? { ...prev, Status: newStatus } : prev,
         );
         window.alert(`Assignment updated to "${newStatus}".`);
       } else {

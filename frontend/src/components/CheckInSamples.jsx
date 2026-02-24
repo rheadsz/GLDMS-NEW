@@ -13,10 +13,9 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
   const [refreshTick, setRefreshTick] = useState(0);
   const [actionSavingId, setActionSavingId] = useState(null);
   const [actionMsg, setActionMsg] = useState("");
-  // Per-sample flag: is this row's Action dropdown currently editable?
-  // Default is true (editable) until an action is chosen, then it becomes false
-  // and can be re-enabled via the checkbox in that row.
-  const [editableSamples, setEditableSamples] = useState({});
+  const [selectedSampleIds, setSelectedSampleIds] = useState(() => new Set());
+  const [bulkAction, setBulkAction] = useState("");
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,6 +50,11 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
       cancelled = true;
     };
   }, [requestId, refreshTick]);
+
+  useEffect(() => {
+    setSelectedSampleIds(new Set());
+    setBulkAction("");
+  }, [active?.RequestID, active?.RequestId]);
 
   const groupedByRequest = useMemo(() => {
     const map = new Map();
@@ -123,6 +127,28 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
     return label;
   };
 
+  const toggleSelected = (sampleId) => {
+    setSelectedSampleIds((prev) => {
+      const next = new Set(prev);
+      const key = String(sampleId);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const setSelectedMany = (ids, on) => {
+    setSelectedSampleIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        const key = String(id);
+        if (on) next.add(key);
+        else next.delete(key);
+      }
+      return next;
+    });
+  };
+
   const updateSampleAction = async (sampleId, label) => {
     const action = normalizeAction(label);
     if (!action) return;
@@ -152,15 +178,54 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
       }
 
       setActionMsg(`Sample ${sampleId} set to ${action}.`);
-      // After a successful update, lock this row again (non-editable)
-      setEditableSamples((prev) => ({
-        ...prev,
-        [sampleId]: false,
-      }));
+      // After a successful update, uncheck this row
+      setSelectedSampleIds((prev) => {
+        const next = new Set(prev);
+        next.delete(String(sampleId));
+        return next;
+      });
     } catch (e) {
       setActionMsg(e.message || "Update failed.");
     } finally {
       setActionSavingId(null);
+    }
+  };
+
+  const bulkApply = async () => {
+    const action = normalizeAction(bulkAction);
+    if (!action) return;
+    const ids = Array.from(selectedSampleIds);
+    if (!ids.length) return;
+
+    const ok = window.confirm(`Apply "${action}" to ${ids.length} sample(s)?`);
+    if (!ok) return;
+
+    setBulkSaving(true);
+    setActionMsg("");
+    try {
+      const r = await fetch("/api/checkin/sample-status/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ SampleIDs: ids, Action: action }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
+
+      setRows((prev) =>
+        prev.map((row) =>
+          selectedSampleIds.has(String(row.SampleID))
+            ? { ...row, ActionStatus: data.actionStatus ?? action }
+            : row
+        )
+      );
+
+      setSelectedSampleIds(new Set());
+      setBulkAction("");
+      setActionMsg(`Updated ${ids.length} sample(s) to ${action}.`);
+    } catch (e) {
+      setActionMsg(e.message || "Bulk update failed.");
+    } finally {
+      setBulkSaving(false);
     }
   };
 
@@ -385,7 +450,23 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                                       textAlign: "center",
                                     }}
                                   >
-                                    {/* per-sample checkbox column */}
+                                    <input
+                                      type="checkbox"
+                                      className="form-check-input"
+                                      checked={
+                                        list.length > 0 &&
+                                        list.every((s) =>
+                                          selectedSampleIds.has(
+                                            String(s.SampleID)
+                                          )
+                                        )
+                                      }
+                                      onChange={(e) => {
+                                        const ids = list.map((s) => s.SampleID);
+                                        setSelectedMany(ids, e.target.checked);
+                                      }}
+                                      aria-label="Select all samples in borehole"
+                                    />
                                   </th>
                                   <th>Sample No.</th>
                                   <th>Depth From</th>
@@ -404,19 +485,13 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                                       <input
                                         type="checkbox"
                                         className="form-check-input"
-                                        checked={
-                                          editableSamples[s.SampleID] ?? true
+                                        checked={selectedSampleIds.has(
+                                          String(s.SampleID)
+                                        )}
+                                        onChange={() =>
+                                          toggleSelected(s.SampleID)
                                         }
-                                        onChange={() => {
-                                          setEditableSamples((prev) => {
-                                            const current =
-                                              prev[s.SampleID] ?? true;
-                                            return {
-                                              ...prev,
-                                              [s.SampleID]: !current,
-                                            };
-                                          });
-                                        }}
+                                        aria-label={`Select sample ${s.SampleID}`}
                                       />
                                     </td>
                                     <td>
@@ -433,7 +508,9 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                                         value={s.ActionStatus ?? ""}
                                         disabled={
                                           actionSavingId === s.SampleID ||
-                                          !(editableSamples[s.SampleID] ?? true)
+                                          !selectedSampleIds.has(
+                                            String(s.SampleID)
+                                          )
                                         }
                                         onChange={(e) => {
                                           const label = e.target.value;
@@ -462,6 +539,31 @@ export default function CheckInSamples({ requestId, sidebarOpen = true }) {
                   </tbody>
                 </table>
               </div>
+
+              {selectedSampleIds.size > 0 && (
+                <div className="d-flex align-items-center justify-content-end gap-2 mt-3">
+                  <select
+                    className="form-select form-select-sm"
+                    style={{ maxWidth: 220 }}
+                    value={bulkAction}
+                    onChange={(e) => setBulkAction(e.target.value)}
+                    disabled={bulkSaving}
+                  >
+                    <option value="">— Select —</option>
+                    <option value="Checked in">Checked in</option>
+                    <option value="Rejected">Rejected</option>
+                    <option value="Not Received">Not Received</option>
+                  </select>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    onClick={bulkApply}
+                    disabled={bulkSaving || !bulkAction}
+                  >
+                    {bulkSaving ? "Saving…" : "Apply"}
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>

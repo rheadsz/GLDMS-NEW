@@ -1,6 +1,17 @@
 // routes/assignments.js
 const express = require("express");
 
+/* --------------------- UTIL: Status mapping (same as request-samples.js) --------------------- */
+const mapDbStatusToUi = (s) => {
+  if (s == null) return null;
+  const v = String(s).trim();
+  if (!v) return null;
+  if (v === "Completed") return "Accepted";
+  if (v === "Cancelled") return "Rejected";
+  if (v === "Requested") return null;
+  return v;
+};
+
 /* --------------------- UTIL: normalize for robust diffs --------------------- */
 const normStr = (v) => (v == null ? null : String(v).trim());
 const normDate = (v) => {
@@ -115,8 +126,8 @@ module.exports = (db) => {
       (r.BoreholeNumber
         ? `${r.BoreholeNumber} (${r.DepthFrom ?? ""}–${r.DepthTo ?? ""})`
         : r.LegacyBH
-        ? `${r.LegacyBH} (${r.DepthFrom ?? ""}–${r.DepthTo ?? ""})`
-        : null) ?? "—",
+          ? `${r.LegacyBH} (${r.DepthFrom ?? ""}–${r.DepthTo ?? ""})`
+          : null) ?? "—",
   });
 
   function sendEmpty(res, requestId, efis = "—") {
@@ -189,11 +200,11 @@ module.exports = (db) => {
             (r.AssignedTester && String(r.AssignedTester).trim() !== ""
               ? 1
               : 0),
-          0
+          0,
         );
         const SubmittedCount = testRows.reduce(
           (n, r) => n + (r.TestStatus === "Submitted" ? 1 : 0),
-          0
+          0,
         );
 
         const header = {
@@ -427,7 +438,7 @@ module.exports = (db) => {
       ];
 
       const sqlUpdate = `UPDATE project_tests SET ${sets.join(
-        ", "
+        ", ",
       )} WHERE TestID = ?`;
       db.query(sqlUpdate, [...params, testId], (e1, r1) => {
         if (e1) {
@@ -526,7 +537,7 @@ module.exports = (db) => {
                 });
               });
             });
-          }
+          },
         );
       });
     });
@@ -545,9 +556,14 @@ module.exports = (db) => {
         DATE(pr.RequestDate)       AS RequestSubmissionDate,
         DATE(pt.RequestedDate)     AS RequestedDueDate,
         tt.TestName                AS RequestedTest,
-        CONCAT(pb.BoreholeNumber, ' (', ps.DepthFrom, '–', ps.DepthTo, ')') AS BoreholeDepth,
+        ps.BoreholeID              AS BoreholeNumber,
+        ps.SampleID                AS SampleID,
+        ps.SampleNumber            AS SampleNumber,
+        ps.DepthFrom               AS DepthFrom,
+        ps.DepthTo                 AS DepthTo,
+        CONCAT(ps.BoreholeID, ' (', ps.DepthFrom, '–', ps.DepthTo, ')') AS BoreholeDepth,
         pt.TestID,
-        COALESCE(pt.TestStatus, pt.Status)         AS TestStatus,
+        pt.Status                                  AS TestStatus,
         pt.AssignedTester,
         DATE(pt.ResultDueDate)     AS AssignedResultDueDate,
         DATE(pt.ReportDueDate)     AS AssignedReportDueDate,
@@ -556,7 +572,6 @@ module.exports = (db) => {
       LEFT JOIN project_samples   ps ON ps.RequestID  = pr.RequestID
       LEFT JOIN project_tests     pt ON pt.SampleID   = ps.SampleID
       LEFT JOIN test_type         tt ON tt.TestTypeID = pt.TestTypeID
-      LEFT JOIN project_boreholes pb ON pb.BoreholeID = ps.BoreholeID
       WHERE pr.RequestID = ?
       ORDER BY pt.TestID ASC
     `;
@@ -568,10 +583,15 @@ module.exports = (db) => {
         const items = rowsNew.map((r) => ({
           TestID: r.TestID,
           RequestedTest: r.RequestedTest ?? "—",
+          BoreholeNumber: r.BoreholeNumber ?? null,
+          SampleID: r.SampleID ?? null,
+          SampleNumber: r.SampleNumber ?? null,
+          DepthFrom: r.DepthFrom ?? null,
+          DepthTo: r.DepthTo ?? null,
           BoreholeDepth: r.BoreholeDepth ?? "—",
           RequestSubmissionDate: r.RequestSubmissionDate ?? "—",
           RequestedDueDate: r.RequestedDueDate ?? "—",
-          TestStatus: r.TestStatus ?? null,
+          TestStatus: mapDbStatusToUi(r.TestStatus),
           AssignedTester: r.AssignedTester ?? null,
           AssignedResultDueDate: r.AssignedResultDueDate ?? null,
           AssignedReportDueDate: r.AssignedReportDueDate ?? null,
@@ -586,6 +606,10 @@ module.exports = (db) => {
           DATE(tr.DateOfRequest)      AS RequestSubmissionDate,
           DATE(tr.TestResultsDueDate) AS RequestedDueDate,
           tt.TestName                 AS RequestedTest,
+          trd.BoreholeID              AS BoreholeNumber,
+          trd.SampleNumber            AS SampleNumber,
+          trd.DepthFrom               AS DepthFrom,
+          trd.DepthTo                 AS DepthTo,
           CONCAT(trd.BoreholeID, ' (', trd.DepthFrom, '–', trd.DepthTo, ')') AS BoreholeDepth,
           trd.DetailID                AS TestID
         FROM test_request tr
@@ -601,6 +625,11 @@ module.exports = (db) => {
         const items = (rowsOld || []).map((r) => ({
           TestID: r.TestID,
           RequestedTest: r.RequestedTest ?? "—",
+          BoreholeNumber: r.BoreholeNumber ?? null,
+          SampleID: null,
+          SampleNumber: r.SampleNumber ?? null,
+          DepthFrom: r.DepthFrom ?? null,
+          DepthTo: r.DepthTo ?? null,
           BoreholeDepth: r.BoreholeDepth ?? "—",
           RequestSubmissionDate: r.RequestSubmissionDate ?? "—",
           RequestedDueDate: r.RequestedDueDate ?? "—",

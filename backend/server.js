@@ -17,7 +17,7 @@ app.use(
   cors({
     origin: true, // reflect the request origin
     credentials: true, // allow cookies so sessions work cross-origin
-  })
+  }),
 );
 app.use(express.json());
 
@@ -34,7 +34,7 @@ app.use(
       secure: false, // set true when serving over HTTPS
       maxAge: 1000 * 60 * 60 * 8, // 8 hours
     },
-  })
+  }),
 );
 
 // Log every incoming request (method + path)

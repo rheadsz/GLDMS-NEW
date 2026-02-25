@@ -1,23 +1,34 @@
+const path = require("path");
+require("dotenv").config({
+  path: path.join(__dirname, "..", ".env." + (process.env.NODE_ENV || "development")),
+});
 const { Sequelize } = require('sequelize');
 
 // Database configuration
-const sequelize = new Sequelize('gldms_2025', 'root', '', {
-  host: '127.0.0.1',
-  port: 3306,
-  dialect: 'mariadb',
-  logging: false,
-  define: {
-    timestamps: true,
-    createdAt: 'CreatedAt',
-    updatedAt: 'UpdatedAt',
-  },
-  pool: {
-    max: 10,
-    min: 0,
-    acquire: 30000,
-    idle: 10000
+// create sequelize from strict env (no local fallbacks)
+const sequelize = new Sequelize(
+  process.env.DB_NAME,
+  process.env.DB_USER,
+  process.env.DB_PASSWORD,
+  {
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT || 3306),
+    dialect: process.env.DB_DIALECT || "mariadb",
+    dialectModule: require("mysql2"),
+    logging: false,
+    define: {
+      timestamps: true,
+      createdAt: "CreatedAt",
+      updatedAt: "UpdatedAt",
+    },
+    pool: {
+      max: 10,
+      min: 0,
+      acquire: 30000,
+      idle: 10000,
+    },
   }
-});
+);
 
 // Import models
 const Project = require('./Project')(sequelize);
@@ -164,6 +175,21 @@ PhTest.belongsTo(Specimen, { foreignKey: 'SpecimenID', as: 'specimen' });
 
 Specimen.hasOne(CationExchangeTest, { foreignKey: 'SpecimenID', as: 'cationExchangeTest' });
 CationExchangeTest.belongsTo(Specimen, { foreignKey: 'SpecimenID', as: 'specimen' });
+
+
+//  connection test
+(async () => {
+  try {
+    await sequelize.authenticate();
+    console.log(" Connected to DB:", process.env.DB_HOST, "as", process.env.DB_USER);
+  } catch (err) {
+    console.error(" DB connection error:", err.message);
+    // don't process.exit here while developing; in prod you may want to fail-fast
+  }
+})();
+
+
+
 
 // Export all models and sequelize instance
 module.exports = {

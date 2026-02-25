@@ -10,6 +10,8 @@
 .env
 .env.local
 .env.production
+.env.development
+.env.production
 
 # Node modules (if you add React later)
 node_modules/

@@ -1,10 +1,26 @@
 // server.js
 const express = require("express");
-const mysql = require("mysql2");
 const cors = require("cors");
 const fs = require("fs");
 const { parse } = require("csv-parser"); // keep as in your original file
 const session = require("express-session");
+
+// Sequelize models
+const {
+  sequelize,
+  Project,
+  TestType,
+  Sample,
+  Specimen,
+  Users,
+  AuditLog,
+  ProjectStructures,
+  ProjectBoreholes,
+  ProjectSamples,
+  ProjectTests,
+  ProjectRequests,
+  ProjectChargingCodes,
+} = require("./models");
 
 const app = express();
 const port = 3001;
@@ -43,45 +59,55 @@ app.use((req, _res, next) => {
   next();
 });
 
-// ---------------- MySQL Connection ----------------
-const db = mysql.createConnection({
-  host: "127.0.0.1",
-  user: "root",
-  password: "",
-  database: "gldms_2025",
-  port: 3306,
-});
+// ---------------- Sequelize Connection ----------------
+const models = {
+  sequelize,
+  Project,
+  TestType,
+  Sample,
+  Specimen,
+  Users,
+  AuditLog,
+  ProjectStructures,
+  ProjectBoreholes,
+  ProjectSamples,
+  ProjectTests,
+  ProjectRequests,
+  ProjectChargingCodes,
+};
 
-db.connect((err) => {
-  if (err) {
-    console.error("Error connecting to database:", err.stack);
-    return;
-  }
-  console.log("Connected to database as id " + db.threadId);
-});
+// Test database connection
+sequelize
+  .authenticate()
+  .then(() => {
+    console.log("Connected to database via Sequelize");
+  })
+  .catch((err) => {
+    console.error("Error connecting to database:", err);
+  });
 
 // ---------------- Routes ----------------
-// NOTE: These routers are functions that accept `db` and return an Express router.
-const supervisorRoutes = require("./routes/supervisor")(db);
+// NOTE: These routers are functions that accept `models` and return an Express router.
+const supervisorRoutes = require("./routes/supervisor")(models);
 app.use("/api/supervisor", supervisorRoutes);
 
-const staffRequestsRoutes = require("./routes/staffrequests")(db);
+const staffRequestsRoutes = require("./routes/staffrequests")(models);
 app.use("/api/requests", staffRequestsRoutes);
 
 // Projects wizard must be registered BEFORE the general projects routes
-const projectsWizardRoutes = require("./routes/projects_wizard")(db);
+const projectsWizardRoutes = require("./routes/projects_wizard")(models);
 app.use("/api/projects", projectsWizardRoutes);
 
 // General projects routes
-const projectsRoutes = require("./routes/projects")(db);
+const projectsRoutes = require("./routes/projects")(models);
 app.use("/api/projects", projectsRoutes);
 
 // User projects route
-const userProjectsRoutes = require("./routes/user-projects")(db);
+const userProjectsRoutes = require("./routes/user-projects")(models);
 app.use("/api/user-projects", userProjectsRoutes);
 
 // Email routes
-const emailRoutes = require("./routes/emails")(db);
+const emailRoutes = require("./routes/emails")(models);
 app.use("/api/emails", emailRoutes);
 
 // Vision DB (no db injection in your original code)
@@ -93,30 +119,30 @@ const pdfRoutes = require("./routes/pdf");
 app.use("/api/pdf", pdfRoutes);
 
 // Assignments router (relies on req.session.* for user stamping)
-const assignmentsRouter = require("./routes/assignments")(db);
+const assignmentsRouter = require("./routes/assignments")(models);
 app.use("/api", assignmentsRouter);
 
 // Check-in samples router (frontend replica of supervisor.js for the Check in Samples tab)
-const checkInSamplesRoutes = require("./routes/checkInSamples")(db);
+const checkInSamplesRoutes = require("./routes/checkInSamples")(models);
 app.use("/api", checkInSamplesRoutes);
 
 // Request samples router
-const requestSamplesRoutes = require("./routes/request-samples")(db);
+const requestSamplesRoutes = require("./routes/request-samples")(models);
 app.use("/api/supervisor", requestSamplesRoutes);
 
 // Test management router
-const testManagementRoutes = require("./routes/test-management")(db);
+const testManagementRoutes = require("./routes/test-management")(models);
 app.use("/api/test-management", testManagementRoutes);
 
 // ---------------- Ad-hoc endpoints ----------------
-app.get("/api/test-types", (req, res) => {
-  const query = "SELECT * FROM test_type";
-  db.query(query, (err, results) => {
-    if (err) {
-      return res.status(500).send(err);
-    }
+app.get("/api/test-types", async (req, res) => {
+  try {
+    const results = await TestType.findAll();
     res.json(results);
-  });
+  } catch (err) {
+    console.error("Error fetching test types:", err);
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 app.get("/api/project-info-options", (req, res) => {
@@ -148,29 +174,21 @@ app.get("/api/project-info-options", (req, res) => {
 });
 
 // ---------------- Auth: login / me / logout ----------------
-app.post("/api/login", (req, res) => {
+app.post("/api/login", async (req, res) => {
   console.log("Login attempt:", req.body);
 
   const { username, password } = req.body;
-  const query =
-    "SELECT * FROM users WHERE UserName = ? AND Password = ? LIMIT 1";
 
-  console.log("Executing query:", query, "with params:", [username, password]);
+  try {
+    const user = await Users.findOne({
+      where: { UserName: username, Password: password },
+    });
 
-  db.query(query, [username, password], (err, results) => {
-    if (err) {
-      console.error("Database error:", err);
-      return res.status(500).json({ message: "Database error" });
-    }
-
-    console.log("Query results:", results);
-
-    if (results.length === 0) {
+    if (!user) {
       console.log("Invalid username or password");
       return res.status(401).json({ message: "Invalid username or password" });
     }
 
-    const user = results[0];
     console.log("Login successful, userType:", user.UserType);
 
     // Persist login in a session cookie so other routes can read the user
@@ -186,7 +204,10 @@ app.post("/api/login", (req, res) => {
       email: user.Email,
       phone: user.Phone,
     });
-  });
+  } catch (err) {
+    console.error("Database error:", err);
+    return res.status(500).json({ message: "Database error" });
+  }
 });
 
 // Quick helper to verify session is set

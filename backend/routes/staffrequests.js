@@ -1,48 +1,58 @@
-// routes/supervisor.js
+// routes/staffrequests.js
 const express = require("express");
 const router = express.Router();
 
-module.exports = (db) => {
-  // ... your existing GET routes ...
+module.exports = (models) => {
+  const { ProjectRequests } = models;
 
-  // PATCH /api/supervisor/requests/:id/status
-  router.patch("/requests/:id/status", (req, res) => {
+  // PATCH /api/requests/:id/status
+  router.patch("/:id/status", async (req, res) => {
     const requestId = req.params.id;
     const { status, assignedStaff, dateOfApproval } = req.body;
 
     // Whitelist allowed statuses
-    const allowed = new Set(["pending", "approved", "rejected", "in-progress", "completed"]);
+    const allowed = new Set([
+      "pending",
+      "approved",
+      "rejected",
+      "in-progress",
+      "completed",
+      "Submitted",
+      "In Progress",
+      "Completed",
+      "Rejected",
+      "PendingApproval",
+      "Assigned",
+    ]);
     if (!status || !allowed.has(status)) {
       return res.status(400).json({ message: "Invalid or missing status." });
     }
 
-    // Build dynamic SET clause based on provided fields
-    const fields = ["Status = ?"];
-    const values = [status];
+    try {
+      // Build update object
+      const updateData = { Status: status };
 
-    if (assignedStaff !== undefined) {
-      fields.push("AssignedStaff = ?");
-      values.push(assignedStaff || "");
-    }
-    if (dateOfApproval !== undefined) {
-      // Expect YYYY-MM-DD (or null to clear)
-      fields.push("DateOfApproval = ?");
-      values.push(dateOfApproval || null);
-    }
+      const [affectedRows] = await ProjectRequests.update(updateData, {
+        where: { RequestID: requestId },
+      });
 
-    const sql = `UPDATE test_request SET ${fields.join(", ")} WHERE RequestID = ?`;
-    values.push(requestId);
-
-    db.query(sql, values, (err, result) => {
-      if (err) {
-        console.error("Error updating request status:", err);
-        return res.status(500).json({ message: "Database error: " + err.message });
-      }
-      if (result.affectedRows === 0) {
+      if (affectedRows === 0) {
         return res.status(404).json({ message: "Request not found." });
       }
-      res.json({ message: "Status updated.", requestId, status, assignedStaff, dateOfApproval });
-    });
+
+      res.json({
+        message: "Status updated.",
+        requestId,
+        status,
+        assignedStaff,
+        dateOfApproval,
+      });
+    } catch (err) {
+      console.error("Error updating request status:", err);
+      return res
+        .status(500)
+        .json({ message: "Database error: " + err.message });
+    }
   });
 
   return router;

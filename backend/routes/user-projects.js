@@ -1,40 +1,43 @@
 const express = require("express");
 const router = express.Router();
 
-module.exports = (db) => {
-  // GET /api/user-projects/:username - Get projects for a specific user
-  router.get("/:username", (req, res) => {
-    const username = req.params.username;
-    
-    const sql = `
-      SELECT 
-        p.ProjectID as DBProjectID,
-        p.EfisProjectId as ProjectID, 
-        p.EfisProjectId,
-        p.ProjectName,
-        p.EA, 
-        p.District, 
-        p.County, 
-        p.Route, 
-        p.StructureNumber, 
-        'Submitted' as Status,
-        p.CreatedBy
-      FROM 
-        project p
-      WHERE 
-        p.CreatedBy = ?
-      ORDER BY 
-        p.ProjectID DESC
-    `;
+module.exports = (models) => {
+  const { Project } = models;
 
-    db.query(sql, [username], (err, results) => {
-      if (err) {
-        console.error("Error fetching user projects:", err);
-        return res.status(500).json({ message: "Database error: " + err.message });
-      }
-      
+  // GET /api/user-projects/:username - Get projects for a specific user
+  router.get("/:username", async (req, res) => {
+    const username = req.params.username;
+
+    try {
+      const projects = await Project.findAll({
+        where: { CreatedBy: username },
+        attributes: [
+          ["ProjectID", "DBProjectID"],
+          ["EfisProjectId", "ProjectID"],
+          "EfisProjectId",
+          "ProjectName",
+          "EA",
+          "District",
+          "County",
+          "Route",
+          "StructureNumber",
+          "CreatedBy",
+        ],
+        order: [["ProjectID", "DESC"]],
+      });
+
+      const results = projects.map((p) => ({
+        ...p.toJSON(),
+        Status: "Submitted",
+      }));
+
       res.json({ projects: results });
-    });
+    } catch (err) {
+      console.error("Error fetching user projects:", err);
+      return res
+        .status(500)
+        .json({ message: "Database error: " + err.message });
+    }
   });
 
   return router;

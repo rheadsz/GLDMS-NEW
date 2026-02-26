@@ -13,7 +13,7 @@ const sequelize = new Sequelize(
   {
     host: process.env.DB_HOST,
     port: Number(process.env.DB_PORT || 3306),
-    dialect: process.env.DB_DIALECT || "mariadb",
+    dialect: process.env.DB_DIALECT || "mysql",
     dialectModule: require("mysql2"),
     logging: false,
     define: {
@@ -393,3 +393,32 @@ module.exports = {
   PhTest,
   CationExchangeTest,
 };
+
+// ...existing code...
+
+// //  Sync database (create tables if they don't exist)
+// (async () => {
+//   try {
+//     await sequelize.sync({ alter: true });
+//     console.log('Database tables synchronized successfully');
+//   } catch (err) {
+//     console.error('Database sync error:', err.message);
+//   }
+// })();
+
+// // Connection test
+// (async () => {
+//   try {
+//     await sequelize.authenticate();
+//     console.log(" Connected to DB:", process.env.DB_HOST, "as", process.env.DB_USER);
+//   } catch (err) {
+//     console.error(" DB connection error:", err.message);
+//   }
+// })();
+
+// // Export all models and sequelize instance
+// module.exports = {
+//   sequelize,
+//   Sequelize,
+//   // ...existing exports...
+// };

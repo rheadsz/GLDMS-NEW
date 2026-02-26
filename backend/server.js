@@ -1,7 +1,13 @@
+
+
+
 // server.js
 const path = require("path");
 require("dotenv").config({
-  path: path.resolve(__dirname, "../.env." + (process.env.NODE_ENV || "development")),
+  path: path.resolve(
+    __dirname,
+    "../.env." + (process.env.NODE_ENV || "development"),
+  ),
 }); // Load .env variables into process.env
 const express = require("express");
 const cors = require("cors");
@@ -25,6 +31,9 @@ const {
   ProjectRequests,
   ProjectChargingCodes,
 } = require("./models");
+
+// Debug: verify models loaded
+console.log("Models loaded - Users defined:", typeof Users !== "undefined");
 
 const app = express();
 const port = 3001;
@@ -115,8 +124,8 @@ const emailRoutes = require("./routes/emails")(models);
 app.use("/api/emails", emailRoutes);
 
 // Vision DB (no db injection in your original code)
-const visiondbRoutes = require("./routes/visiondb");
-app.use("/api/visiondb", visiondbRoutes);
+// const visiondbRoutes = require("./routes/visiondb");
+// app.use("/api/visiondb", visiondbRoutes);
 
 // PDF generation routes
 const pdfRoutes = require("./routes/pdf");
@@ -141,7 +150,7 @@ app.use("/api/test-management", testManagementRoutes);
 // ---------------- Ad-hoc endpoints ----------------
 app.get("/api/test-types", async (req, res) => {
   try {
-    const results = await TestType.findAll();
+    const results = await models.TestType.findAll();
     res.json(results);
   } catch (err) {
     console.error("Error fetching test types:", err);
@@ -178,13 +187,16 @@ app.get("/api/project-info-options", (req, res) => {
 });
 
 // ---------------- Auth: login / me / logout ----------------
+// ...existing code...
+
+// ---------------- Auth: login / me / logout ----------------
 app.post("/api/login", async (req, res) => {
   console.log("Login attempt:", req.body);
 
   const { username, password } = req.body;
 
   try {
-    const user = await Users.findOne({
+    const user = await models.Users.findOne({
       where: { UserName: username, Password: password },
     });
 
@@ -213,6 +225,8 @@ app.post("/api/login", async (req, res) => {
     return res.status(500).json({ message: "Database error" });
   }
 });
+
+// ...existing code...
 
 // Quick helper to verify session is set
 app.get("/api/me", (req, res) => {
